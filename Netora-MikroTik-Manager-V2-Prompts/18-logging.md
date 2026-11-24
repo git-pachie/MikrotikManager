@@ -2,7 +2,9 @@
 Daily text-file logging for operational events. This module is separate from the SQL-based Audit Trail in `12-audit-backup.md`. The Audit Trail page reads the database. Log files are for operators and troubleshooting on the server.
 
 ### 18.01 Daily log files
-Write plain-text log files, one file per calendar date. File name pattern: `netora-yyyy-MM-dd.txt` (example: `netora-2026-11-24.txt`). A new file starts at the first event after midnight. Never append a different date's events to an existing file. The WebApi and WebUI write to their own files (`netora-api-...` and `netora-web-...`) or share one location with a source field. Choose one and document it.
+Write plain-text log files, one file per calendar date. File name pattern: `netora-yyyy-MM-dd.txt` (example: `netora-2026-11-24.txt`). A new file starts at the first event after midnight. Never append a different date's events to an existing file.
+
+**Decided:** WebApi and WebUI write separate files, so the file names carry the application: `netora-api-yyyy-MM-dd.txt` and `netora-web-yyyy-MM-dd.txt`. Each application reads its own folder setting (see 18.05). The date in the file name and the timestamps use the server's local time zone, and every line includes the UTC offset.
 
 ### 18.02 Events to log
 | Category | Events |
@@ -27,14 +29,14 @@ Required fields: timestamp with offset, level (`INF`, `WRN`, `ERR`), category, e
 - Passwords, password hashes, tokens, cookies, anti-forgery values, API keys, connection strings, router credentials, SMTP passwords.
 - Full request or response bodies.
 - Customer personal data beyond the entity ID. Log the customer ID, not the name, phone or address. Log changed field names, not old and new values.
-- On failed login, log the attempted user name (truncated to a fixed length, control characters removed) and the IP address. Users sometimes type a password into the user name field, so treat that field as sensitive and do not log it in clear text for unknown users. Decide the rule (for example, log only a hash or the first characters for unknown accounts) and document it.
+- **Decided (failed login):** log every failed login attempt with the user name exactly as typed, whether or not the account exists, plus the IP address and the failure reason class. Only two changes are made to the typed value: control characters and line breaks are removed or escaped, and the value is capped at a fixed length (for example 256 characters). Accepted risk: if someone types a password into the user name field, it appears in the log file, so restrict access to the log folder (18.05).
 - Escape or strip line breaks in every logged value so input cannot forge extra log lines.
 
 ### 18.05 Storage, access and retention
-- The log folder is configured by setting (`Logging:File:Path`), outside the web root, never served over HTTP.
+- **Decided:** the log folder is configurable in `appsettings.json` and can be overridden per environment or by environment variable. Each application has its own key: `Logging:File:Path` in `Netora.WebApi` and in `Netora.WebUI`, with separate default folders (for example `logs/api` and `logs/web`). Create the folder if it does not exist. The folder must be outside the web root and never served over HTTP. The default folders are ignored by git (`logs/` is in `.gitignore`).
 - The application account has write access to that folder only. Operators and Managers read logs through server access, not the browser, unless a later requirement adds a log viewer.
 - Logging must not break requests. If the file cannot be written, the request continues and the failure goes to the console or the OS event log.
-- Retention is configurable (`Logging:File:RetainDays`). The value is an open decision (see below). Delete files only by the retention job, never from request code.
+- **Decided:** retention is handled manually by the operator. The application never deletes or rotates old files, and has no retention setting or job.
 - Log files hold operational data about Manager-only customers (IDs and actions). Restrict folder permissions to administrators and the service account.
 
 ### 18.06 Implementation notes
@@ -53,9 +55,12 @@ Required fields: timestamp with offset, level (`INF`, `WRN`, `ERR`), category, e
 - A failing file write does not fail the request.
 
 ## Open specifications (do not invent)
-- Log folder location on the server and the account that writes to it.
-- Retention period in days. A proposal is 90 days, pending approval.
-- Time zone for the file date: server local time or UTC.
-- Whether WebApi and WebUI write separate files or one shared file.
-- Failed-login rule for unknown user names (see 18.04).
-- Whether Managers need an in-app log viewer. None is in the 18 approved mockups, and adding one needs a design.
+- Production log folder path and the account that writes to it (the setting exists; the value is deployment-specific).
+- Time zone: this spec uses the server's local time zone because background events have no browser. If "user time zone" should mean each signed-in user's own zone, that needs a per-user setting and is not specified.
+
+## Decided
+- Log path is configurable in `appsettings` (separate key per application).
+- No retention logic in the application.
+- Separate files for WebApi and WebUI.
+- Failed logins log the typed user name as entered (control characters removed, length capped).
+- No in-app log viewer.

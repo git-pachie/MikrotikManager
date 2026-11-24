@@ -33,4 +33,4 @@ All 18 HTML designs approved as visual references; **shared MVC shell started (s
 | SQL Server connection | Configured, untested | Stored in user-secrets for `Netora.WebApi`; port 1433 reachable. Login not verified until EF Core is added. |
 | Identity, login, roles | Not started | |
 | Mock MikroTik service | Not started | |
-| Logging module | Spec written | `18-logging.md`. Not implemented. Open decisions: log folder, retention, time zone, shared or separate API/WebUI files, unknown-user failed-login rule. |
+| Logging module | Spec updated with decisions | `18-logging.md`. Not implemented. Decided: configurable path per app, separate API/WebUI files, no retention logic, typed user name logged on failed login, no viewer. Open: production folder path; time zone assumed server local time. |
