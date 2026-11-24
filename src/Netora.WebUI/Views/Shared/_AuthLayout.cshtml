@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en" data-bs-theme="light">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>@(ViewData["Title"] ?? "Sign in") | Netora MikroTik Manager</title>
+    <link rel="preload" href="~/fonts/Inter-400-latin.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="~/css/fonts.css" asp-append-version="true">
+    <link rel="stylesheet" href="~/lib/bootstrap/css/bootstrap.min.css" asp-append-version="true">
+    <link rel="stylesheet" href="~/css/netora.css" asp-append-version="true">
+    <link rel="stylesheet" href="~/css/auth.css" asp-append-version="true">
+    <script src="~/js/theme.js" asp-append-version="true"></script>
+</head>
+<body>
+    <main class="auth-shell">
+        <div class="auth-card">
+            <div class="auth-brand">
+                <img src="~/assets/netora-logo.svg" alt="Netora logo">
+                <div>
+                    <div class="brand-name">Netora</div>
+                    <div class="brand-sub">MikroTik Manager v1.0</div>
+                </div>
+            </div>
+            <div class="auth-body">
+                @RenderBody()
+            </div>
+        </div>
+    </main>
+</body>
+</html>

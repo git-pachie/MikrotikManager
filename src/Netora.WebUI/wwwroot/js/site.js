@@ -21,4 +21,8 @@
   if (toggle && sidebar) {
     toggle.addEventListener('click', function () { sidebar.classList.toggle('open'); });
   }
+  // <select data-autosubmit> submits its form on change (used for "Rows per page").
+  document.querySelectorAll('select[data-autosubmit]').forEach(function (s) {
+    s.addEventListener('change', function () { if (s.form) s.form.submit(); });
+  });
 })();

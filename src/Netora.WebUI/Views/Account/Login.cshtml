@@ -1,0 +1,29 @@
+@model LoginViewModel
+@{
+    ViewData["Title"] = "Sign in";
+    Layout = "_AuthLayout";
+}
+<h1>Sign in</h1>
+<p class="auth-lead">Use the account issued to you by a Manager.</p>
+
+@if (Model.SessionExpired)
+{
+    <div class="auth-info" role="status" style="margin-bottom:16px">Your session ended. Sign in again to continue.</div>
+}
+@if (!ViewData.ModelState.IsValid && ViewData.ModelState[string.Empty]?.Errors.Count > 0)
+{
+    <div class="auth-error" role="alert" style="margin-bottom:16px">@ViewData.ModelState[string.Empty]!.Errors[0].ErrorMessage</div>
+}
+
+<form asp-controller="Account" asp-action="Login" method="post" class="auth-form" novalidate>
+    <input type="hidden" asp-for="ReturnUrl" />
+    <label>User name
+        <input asp-for="UserName" autocomplete="username" autofocus maxlength="256" />
+        <span asp-validation-for="UserName" class="field-error"></span>
+    </label>
+    <label>Password
+        <input asp-for="Password" type="password" autocomplete="current-password" maxlength="256" value="" />
+        <span asp-validation-for="Password" class="field-error"></span>
+    </label>
+    <button type="submit" class="btn btn-primary">Sign in</button>
+</form>

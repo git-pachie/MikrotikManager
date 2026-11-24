@@ -1,0 +1,18 @@
+/* Sign-in and access-denied pages. Reuses the approved palette, fonts and sidebar brand block; adds layout only. */
+.auth-shell{min-height:100vh;display:grid;place-items:center;padding:24px;background:var(--bg)}
+.auth-card{width:100%;max-width:420px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
+.auth-brand{display:flex;align-items:center;gap:8px;padding:16px 24px;background:linear-gradient(155deg,var(--navy-dark),var(--navy));color:#f5f8ff}
+.auth-brand img{width:68px;height:48px;object-fit:contain;margin-left:-8px}
+.auth-body{padding:24px}
+.auth-body h1{font-size:22px;font-weight:700;margin:0 0 4px}
+.auth-body .auth-lead{color:var(--muted);font-size:13px;margin:0 0 18px}
+.auth-form{display:grid;gap:16px}
+.auth-form label{display:flex;flex-direction:column;gap:7px;color:var(--muted);font-size:12px;font-weight:500}
+.auth-form input{width:100%;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--ink);padding:10px 12px;font:400 13px/1.5 Inter,system-ui,sans-serif;min-height:40px}
+.auth-form input:focus{outline:2px solid rgba(6,102,245,.16);border-color:var(--blue)}
+.auth-form .btn{width:100%}
+.auth-error{background:#ffe0e4;color:#b31926;border-radius:8px;padding:10px 12px;font-size:12.5px;font-weight:500}
+.auth-info{background:var(--thead);color:var(--ink);border-radius:8px;padding:10px 12px;font-size:12.5px}
+.field-error{color:#b31926;font-size:12px}
+.signout-form{margin:0}
+[data-bs-theme=dark] .auth-error{background:#4a1d26;color:#ffc9d0}

@@ -9,10 +9,16 @@
         <div class="profile">
             <div class="avatar" aria-hidden="true">👤</div>
             <div>
-                <div class="profile-name">@(User.Identity?.IsAuthenticated == true ? User.Identity.Name : "Not signed in")</div>
+                <div class="profile-name">@(User.Identity?.IsAuthenticated == true ? (User.FindFirst("display_name")?.Value ?? User.Identity.Name) : "Not signed in")</div>
                 <div class="profile-role">@(User.IsInRole("Manager") ? "Manager" : User.IsInRole("Staff") ? "Staff" : "")</div>
             </div>
             <svg class="icon" style="width:14px"><use href="#chevron" /></svg>
         </div>
+        @if (User.Identity?.IsAuthenticated == true)
+        {
+            <form asp-controller="Account" asp-action="Logout" method="post" class="signout-form">
+                <button type="submit" class="btn btn-outline">Sign out</button>
+            </form>
+        }
     </div>
 </header>

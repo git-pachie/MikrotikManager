@@ -1,6 +1,11 @@
+@model CustomerListViewModel
+@using System.Globalization
+@using Netora.Application.Customers
 @{
     ViewData["Title"] = "Customers";
     ViewData["Nav"] = "customers";
+    var data = Model.Data;
+    const string later = "Available in a later phase";
 }
 <div class="heading">
     <div class="heading-title">
@@ -10,7 +15,143 @@
             <p>Manage subscribers, PPPoE accounts, NAP assignment, and connection status.</p>
         </div>
     </div>
+    <div class="heading-actions">
+        <button type="button" class="btn btn-outline" disabled title="@later"><svg class="icon"><use href="#upload" /></svg>Import PPPoE</button>
+        <button type="button" class="btn btn-success" disabled title="@later"><svg class="icon"><use href="#plus" /></svg>Add Customer</button>
+        <button type="button" class="btn btn-icon" disabled title="@later" aria-label="More actions"><svg class="icon"><use href="#chevron" /></svg></button>
+    </div>
 </div>
+
+@if (data is null)
+{
+    <section class="panel" role="alert">
+        <p class="mb-0" style="color:var(--muted)">@Model.ErrorMessage</p>
+    </section>
+    return;
+}
+
+<div class="stats" aria-label="Customer summary">
+    <div class="stat" style="--stat-color:#0866f5;--stat-tint:#e3f0ff"><span class="stat-icon"><svg class="icon"><use href="#users" /></svg></span><div><div class="stat-label">Total Customers</div><div class="stat-value">@data.Stats.Total</div></div></div>
+    <div class="stat" style="--stat-color:#00a544;--stat-tint:#dffbea"><span class="stat-icon"><svg class="icon"><use href="#wifi" /></svg></span><div><div class="stat-label">Active</div><div class="stat-value">@data.Stats.Active</div></div></div>
+    <div class="stat" style="--stat-color:#ffae00;--stat-tint:#fff3d3"><span class="stat-icon" style="font-size:28px;font-weight:900">Ⅱ</span><div><div class="stat-label">Disabled</div><div class="stat-value">@data.Stats.Disabled</div></div></div>
+    <div class="stat" style="--stat-color:#ee1c2d;--stat-tint:#ffe6e9"><span class="stat-icon"><svg class="icon"><use href="#x" /></svg></span><div><div class="stat-label">Terminated</div><div class="stat-value">@data.Stats.Terminated</div></div></div>
+    <div class="stat" style="--stat-color:#8839df;--stat-tint:#f1e8ff"><span class="stat-icon" style="font-size:28px;font-weight:900">?</span><div><div class="stat-label">Unknown NAP</div><div class="stat-value">@data.Stats.UnknownNap</div></div></div>
+</div>
+
 <section class="panel" aria-label="Customer records">
-    <p class="mb-0" style="color:var(--muted)">No customer data yet. The customer list is connected in a later phase.</p>
+    <form class="filters" id="filters" method="get" action="/customers">
+        <div class="field">
+            <label for="search">&nbsp;</label>
+            <div class="search-wrap">
+                <svg class="icon"><use href="#icon-search" /></svg>
+                <input id="search" name="search" type="search" value="@Model.Search" maxlength="100" placeholder="Search by name, username, phone, or address..." autocomplete="off">
+            </div>
+        </div>
+        <div class="field">
+            <label for="status">Status</label>
+            <select id="status" name="status">
+                @foreach (var s in CustomerListViewModel.StatusOptions)
+                {
+                    <option selected="@(s == Model.Status)">@s</option>
+                }
+            </select>
+        </div>
+        <div class="field">
+            <label for="nap">NAP Box</label>
+            <select id="nap" name="nap">
+                <option selected="@(Model.Nap == "All")">All</option>
+                @foreach (var n in data.NapOptions)
+                {
+                    <option selected="@(n == Model.Nap)">@n</option>
+                }
+            </select>
+        </div>
+        <div class="field">
+            <label for="plan">Plan</label>
+            <select id="plan" name="plan">
+                <option selected="@(Model.Plan == "All")">All</option>
+                @foreach (var p in data.PlanOptions)
+                {
+                    <option selected="@(p == Model.Plan)">@p</option>
+                }
+            </select>
+        </div>
+        <button type="submit" class="btn btn-primary"><svg class="icon"><use href="#icon-search" /></svg>Search</button>
+        <a href="/customers" class="btn"><svg class="icon"><use href="#refresh" /></svg>Reset</a>
+    </form>
+
+    <div class="table-scroll">
+        <table class="customers-table">
+            <thead><tr><th>#</th><th>Customer Name</th><th>PPPoE Username</th><th>Plan</th><th>NAP Box</th><th>ONU Serial</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead>
+            <tbody>
+                @if (data.Items.Count == 0)
+                {
+                    <tr><td colspan="9" style="text-align:center;padding:28px">No matching customers found.</td></tr>
+                }
+                @{ var rowNumber = (data.Page - 1) * data.PageSize; }
+                @foreach (var c in data.Items)
+                {
+                    rowNumber++;
+                    var unknownNap = c.NapBox == "UNKNOWN";
+                    <tr>
+                        <td>@rowNumber</td>
+                        <td class="name">@c.Name</td>
+                        <td>@c.PppoeUsername</td>
+                        <td>@c.PlanName</td>
+                        <td><span class="pill @(unknownNap ? "unknown" : "nap")">@c.NapBox</span></td>
+                        <td>@(string.IsNullOrEmpty(c.OnuSerial) ? "—" : c.OnuSerial)</td>
+                        <td>
+                            <span class="pill @c.Status.ToLowerInvariant()">
+                                @if (c.Status == "Active") { <svg class="icon"><use href="#wifi" /></svg> }
+                                else if (c.Status == "Terminated") { <svg class="icon"><use href="#x" /></svg> }
+                                else { <text>Ⅱ</text> }
+                                @c.Status
+                            </span>
+                        </td>
+                        <td>@c.CreatedAtUtc.ToLocalTime().ToString("MMM d, yyyy", CultureInfo.InvariantCulture)</td>
+                        <td>
+                            <div class="actions">
+                                <button type="button" class="action-btn primary" disabled title="Edit customer: @later.ToLowerInvariant()" aria-label="Edit @c.Name"><svg class="icon"><use href="#edit" /></svg></button>
+                                <button type="button" class="action-btn" disabled title="Diagnostics: @later.ToLowerInvariant()" aria-label="Diagnostics for @c.PppoeUsername"><svg class="icon"><use href="#pulse" /></svg></button>
+                                <button type="button" class="action-btn" disabled title="More actions: @later.ToLowerInvariant()" aria-label="More actions for @c.Name"><svg class="icon"><use href="#more" /></svg></button>
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    @{
+        var first = data.TotalMatching == 0 ? 0 : (data.Page - 1) * data.PageSize + 1;
+        var last = Math.Min(data.Page * data.PageSize, data.TotalMatching);
+        var totalPages = Model.TotalPages;
+    }
+    <div class="pagination-bar">
+        <div>Showing @first to @last of @data.TotalMatching customers</div>
+        <div class="pager" aria-label="Pagination">
+            <button type="submit" form="filters" name="page" value="1" disabled="@(data.Page <= 1)" aria-label="First page">«</button>
+            <button type="submit" form="filters" name="page" value="@(data.Page - 1)" disabled="@(data.Page <= 1)" aria-label="Previous page">‹</button>
+            @for (var p = 1; p <= totalPages; p++)
+            {
+                <button type="submit" form="filters" name="page" value="@p" class="@(p == data.Page ? "active" : null)" aria-label="Page @p" aria-current="@(p == data.Page ? "page" : null)">@p</button>
+            }
+            <button type="submit" form="filters" name="page" value="@(data.Page + 1)" disabled="@(data.Page >= totalPages)" aria-label="Next page">›</button>
+            <button type="submit" form="filters" name="page" value="@totalPages" disabled="@(data.Page >= totalPages)" aria-label="Last page">»</button>
+        </div>
+        <div class="rows-select">
+            <label for="pageSize">Rows per page:</label>
+            <select id="pageSize" name="pageSize" form="filters" data-autosubmit>
+                @foreach (var size in CustomerListQuery.AllowedPageSizes)
+                {
+                    <option selected="@(size == Model.PageSize)">@size</option>
+                }
+            </select>
+        </div>
+    </div>
 </section>
+
+@if (data.ContainsSampleData)
+{
+    <p class="demo-note">Sample data: these customers are fictional development records (IsSampleData = 1), not real subscribers.</p>
+}
