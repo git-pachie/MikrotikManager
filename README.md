@@ -85,7 +85,7 @@ Trust the development HTTPS certificate once so the WebUI can call the API over 
 dotnet dev-certs https --trust
 ```
 
-Swagger (Development only): `https://localhost:7225/swagger` or `http://localhost:5132/swagger`.
+Swagger is controlled by the `Swagger:Enabled` setting in `src/Netora.WebApi` (any environment; env var `Swagger__Enabled`). It is `true` in `appsettings.Development.json` and `false` in `appsettings.json` and `appsettings.Production.json`. When `false`, Swagger is not registered and `/swagger` returns 404. Dev URLs: `https://localhost:7225/swagger` or `http://localhost:5132/swagger`.
 
 Check the full path (WebUI → API → database): open `https://localhost:7067/system/api-health`. A healthy result shows `"status":"Healthy"`.
 

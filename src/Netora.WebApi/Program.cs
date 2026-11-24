@@ -22,6 +22,10 @@ builder.Services.AddControllers(o => o.SuppressImplicitRequiredAttributeForNonNu
     .UseApiResponseEnvelopeForValidation();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddProblemDetails();
+// Swagger is controlled only by the "Swagger:Enabled" setting, in any environment.
+var swaggerEnabled = builder.Configuration.GetValue<bool>("Swagger:Enabled");
+if (swaggerEnabled)
+{
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
@@ -41,6 +45,7 @@ builder.Services.AddSwaggerGen(options =>
     });
 });
 
+}
 var app = builder.Build();
 
 await IdentitySeeder.SeedAsync(app.Services);
@@ -53,7 +58,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseExceptionHandler();
 
-if (app.Environment.IsDevelopment())
+if (swaggerEnabled)
 {
     app.UseSwagger();
     app.UseSwaggerUI();
