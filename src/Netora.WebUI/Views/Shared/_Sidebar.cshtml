@@ -1,0 +1,23 @@
+@using Netora.WebUI.Navigation
+@{
+    var current = ViewData["Nav"] as string;
+}
+<aside class="sidebar" id="sidebar">
+    <div class="brand">
+        <img src="~/assets/netora-logo.svg" alt="Netora logo">
+        <div>
+            <div class="brand-name">Netora</div>
+            <div class="brand-sub">MikroTik Manager v1.0</div>
+        </div>
+    </div>
+    <nav class="sidebar-nav" aria-label="Main navigation">
+        @foreach (var item in NavItems.All)
+        {
+            var isCurrent = item.Key == current;
+            <a href="@item.Path" class="nav-item" data-current="@(isCurrent ? "true" : "false")" aria-current="@(isCurrent ? "page" : null)">
+                <svg class="icon"><use href="#@item.Icon" /></svg>@item.Label
+            </a>
+        }
+    </nav>
+    <img class="sidebar-wave" src="~/assets/sidebar-waves.svg" alt="">
+</aside>

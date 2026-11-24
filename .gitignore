@@ -1,0 +1,16 @@
+# Build output
+bin/
+obj/
+*.user
+.vs/
+# OS / editor
+.DS_Store
+.idea/
+# Secrets and local config
+appsettings.*.local.json
+secrets.json
+*.pfx
+.env
+# Logs
+logs/
+*.log
