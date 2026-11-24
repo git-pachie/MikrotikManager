@@ -17,6 +17,10 @@ public interface INetoraApiClient
     Task LogoutAsync(CancellationToken cancellationToken);
 
     Task<ApiResponse<CustomerListDto>> GetCustomersAsync(CustomerListQuery query, CancellationToken cancellationToken);
+
+    Task<ApiResponse<CustomerFormOptionsDto>> GetCustomerFormOptionsAsync(CancellationToken cancellationToken);
+
+    Task<ApiResponse<CreatedCustomerDto>> CreateCustomerAsync(CreateCustomerRequest request, CancellationToken cancellationToken);
 }
 
 public sealed class NetoraApiClient(HttpClient httpClient, ILogger<NetoraApiClient> logger) : INetoraApiClient
@@ -29,6 +33,12 @@ public sealed class NetoraApiClient(HttpClient httpClient, ILogger<NetoraApiClie
 
     public async Task LogoutAsync(CancellationToken cancellationToken)
         => await SendAsync<object>(HttpMethod.Post, "api/v1/auth/logout", null, cancellationToken);
+
+    public Task<ApiResponse<CustomerFormOptionsDto>> GetCustomerFormOptionsAsync(CancellationToken cancellationToken)
+        => SendAsync<CustomerFormOptionsDto>(HttpMethod.Get, "api/v1/customers/form-options", null, cancellationToken);
+
+    public Task<ApiResponse<CreatedCustomerDto>> CreateCustomerAsync(CreateCustomerRequest request, CancellationToken cancellationToken)
+        => SendAsync<CreatedCustomerDto>(HttpMethod.Post, "api/v1/customers", request, cancellationToken);
 
     public Task<ApiResponse<CustomerListDto>> GetCustomersAsync(CustomerListQuery query, CancellationToken cancellationToken)
     {

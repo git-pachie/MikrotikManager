@@ -17,10 +17,15 @@
     </div>
     <div class="heading-actions">
         <button type="button" class="btn btn-outline" disabled title="@later"><svg class="icon"><use href="#upload" /></svg>Import PPPoE</button>
-        <button type="button" class="btn btn-success" disabled title="@later"><svg class="icon"><use href="#plus" /></svg>Add Customer</button>
+        <a class="btn btn-success" href="/customers/new"><svg class="icon"><use href="#plus" /></svg>Add Customer</a>
         <button type="button" class="btn btn-icon" disabled title="@later" aria-label="More actions"><svg class="icon"><use href="#chevron" /></svg></button>
     </div>
 </div>
+
+@if (TempData[Netora.WebUI.Controllers.CustomersController.ToastKey] is string toast)
+{
+    <div class="form-success" role="status">@toast</div>
+}
 
 @if (data is null)
 {
@@ -50,9 +55,9 @@
         <div class="field">
             <label for="status">Status</label>
             <select id="status" name="status">
-                @foreach (var s in CustomerListViewModel.StatusOptions)
+                @foreach (var (value, label) in CustomerListViewModel.StatusOptions)
                 {
-                    <option selected="@(s == Model.Status)">@s</option>
+                    <option value="@value" selected="@(value == Model.Status)">@label</option>
                 }
             </select>
         </div>
@@ -101,11 +106,12 @@
                         <td><span class="pill @(unknownNap ? "unknown" : "nap")">@c.NapBox</span></td>
                         <td>@(string.IsNullOrEmpty(c.OnuSerial) ? "—" : c.OnuSerial)</td>
                         <td>
-                            <span class="pill @c.Status.ToLowerInvariant()">
+                            <span class="pill @(c.Status == "PendingApproval" ? "pending" : c.Status.ToLowerInvariant())">
                                 @if (c.Status == "Active") { <svg class="icon"><use href="#wifi" /></svg> }
                                 else if (c.Status == "Terminated") { <svg class="icon"><use href="#x" /></svg> }
+                                else if (c.Status == "PendingApproval") { <svg class="icon"><use href="#clipboard" /></svg> }
                                 else { <text>Ⅱ</text> }
-                                @c.Status
+                                @CustomerListViewModel.StatusLabel(c.Status)
                             </span>
                         </td>
                         <td>@c.CreatedAtUtc.ToLocalTime().ToString("MMM d, yyyy", CultureInfo.InvariantCulture)</td>
@@ -153,5 +159,5 @@
 
 @if (data.ContainsSampleData)
 {
-    <p class="demo-note">Sample data: these customers are fictional development records (IsSampleData = 1), not real subscribers.</p>
+    <p class="demo-note">This database contains fictional sample customers for development (IsSampleData = 1). They are not real subscribers.</p>
 }

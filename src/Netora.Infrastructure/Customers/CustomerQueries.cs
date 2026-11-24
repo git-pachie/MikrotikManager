@@ -68,5 +68,18 @@ internal sealed class CustomerQueries(NetoraDbContext db) : ICustomerQueries
         return new CustomerListDto(items, totalMatching, page, pageSize, stats, napOptions, planOptions, containsSample);
     }
 
+    public async Task<CustomerFormOptionsDto> GetFormOptionsAsync(bool includeManagerOnly, CancellationToken cancellationToken)
+    {
+        var visible = db.Customers.AsNoTracking();
+        if (!includeManagerOnly)
+            visible = visible.Where(c => !c.IsManagerOnly);
+
+        var plans = await visible.Select(c => c.PlanName).Distinct().OrderBy(p => p).ToListAsync(cancellationToken);
+        var naps = await visible.Select(c => c.NapBox).Where(n => n != Customer.UnknownNap).Distinct().OrderBy(n => n)
+            .ToListAsync(cancellationToken);
+        naps.Insert(0, Customer.UnknownNap);
+        return new CustomerFormOptionsDto(plans, naps);
+    }
+
     private static bool IsAll(string value) => string.Equals(value, "All", StringComparison.OrdinalIgnoreCase);
 }

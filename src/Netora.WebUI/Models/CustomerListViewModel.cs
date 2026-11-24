@@ -14,7 +14,13 @@ public sealed class CustomerListViewModel
     public CustomerListDto? Data { get; init; }
     public string? ErrorMessage { get; init; }
 
-    public static readonly string[] StatusOptions = ["All", "Active", "Disabled", "Terminated"];
+    public static readonly (string Value, string Label)[] StatusOptions =
+    [
+        ("All", "All"), ("PendingApproval", "Pending"), ("Active", "Active"),
+        ("Disabled", "Disabled"), ("Terminated", "Terminated"),
+    ];
+
+    public static string StatusLabel(string status) => status == "PendingApproval" ? "Pending Approval" : status;
 
     public int TotalPages => Data is null ? 1 : Math.Max(1, (int)Math.Ceiling(Data.TotalMatching / (double)Data.PageSize));
 

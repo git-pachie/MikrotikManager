@@ -51,6 +51,7 @@ public static class DependencyInjection
         services.AddScoped<ISecurityEventWriter, SecurityEventWriter>();
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<Netora.Application.Customers.ICustomerQueries, Customers.CustomerQueries>();
+        services.AddScoped<Netora.Application.Customers.ICustomerRepository, Customers.CustomerRepository>();
         return services;
     }
 }

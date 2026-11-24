@@ -13,6 +13,5 @@
 .auth-form .btn{width:100%}
 .auth-error{background:#ffe0e4;color:#b31926;border-radius:8px;padding:10px 12px;font-size:12.5px;font-weight:500}
 .auth-info{background:var(--thead);color:var(--ink);border-radius:8px;padding:10px 12px;font-size:12.5px}
-.field-error{color:#b31926;font-size:12px}
 .signout-form{margin:0}
 [data-bs-theme=dark] .auth-error{background:#4a1d26;color:#ffc9d0}

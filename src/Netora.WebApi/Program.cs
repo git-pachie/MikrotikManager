@@ -17,7 +17,9 @@ builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddNetoraAuthentication();
 
-builder.Services.AddControllers().UseApiResponseEnvelopeForValidation();
+// FluentValidation in Application owns field rules, so MVC must not add implicit [Required] on non-nullable strings.
+builder.Services.AddControllers(o => o.SuppressImplicitRequiredAttributeForNonNullableReferenceTypes = true)
+    .UseApiResponseEnvelopeForValidation();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddProblemDetails();
 builder.Services.AddEndpointsApiExplorer();
