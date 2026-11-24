@@ -11,21 +11,59 @@ internal sealed class CustomerRepository(NetoraDbContext db) : ICustomerReposito
     // SQL Server error numbers for unique index / constraint violations.
     private static readonly int[] UniqueViolationErrors = [2601, 2627];
 
-    public Task<bool> PppoeUsernameExistsAsync(string pppoeUsername, CancellationToken cancellationToken)
-        => db.Customers.AnyAsync(c => c.PppoeUsername == pppoeUsername, cancellationToken);
+    public Task<bool> PppoeUsernameExistsAsync(string pppoeUsername, int? exceptCustomerId, CancellationToken cancellationToken)
+        => db.Customers.AnyAsync(
+            c => c.PppoeUsername == pppoeUsername && (exceptCustomerId == null || c.Id != exceptCustomerId),
+            cancellationToken);
 
-    public async Task<bool> TryAddAsync(Customer customer, CancellationToken cancellationToken)
+    public Task<Customer?> FindForUpdateAsync(int id, bool includeManagerOnly, CancellationToken cancellationToken)
+        => db.Customers.FirstOrDefaultAsync(c => c.Id == id && (includeManagerOnly || !c.IsManagerOnly), cancellationToken);
+
+    public async Task<CustomerSaveResult> AddAsync(Customer customer, CustomerActivity activity, CancellationToken cancellationToken)
     {
+        // The activity needs the new customer's ID, so both rows are written in one transaction.
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         db.Customers.Add(customer);
         try
         {
             await db.SaveChangesAsync(cancellationToken);
-            return true;
+            activity.CustomerId = customer.Id;
+            db.CustomerActivities.Add(activity);
+            await db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return CustomerSaveResult.Saved;
         }
-        catch (DbUpdateException ex) when (ex.InnerException is SqlException sql && UniqueViolationErrors.Contains(sql.Number))
+        catch (DbUpdateException ex) when (IsUniqueViolation(ex))
         {
-            db.Entry(customer).State = EntityState.Detached;
-            return false;
+            db.ChangeTracker.Clear();
+            return CustomerSaveResult.DuplicatePppoeUsername;
         }
     }
+
+    public async Task<CustomerSaveResult> UpdateAsync(Customer customer, string expectedStamp, CustomerActivity activity,
+        CancellationToken cancellationToken)
+    {
+        // The UPDATE only matches if nobody saved in between: WHERE Id = @id AND ConcurrencyStamp = @expected.
+        db.Entry(customer).Property(c => c.ConcurrencyStamp).OriginalValue = expectedStamp;
+        customer.ConcurrencyStamp = Guid.NewGuid().ToString("N");
+        db.CustomerActivities.Add(activity);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+            return CustomerSaveResult.Saved;
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            db.ChangeTracker.Clear();
+            return CustomerSaveResult.Conflict;
+        }
+        catch (DbUpdateException ex) when (IsUniqueViolation(ex))
+        {
+            db.ChangeTracker.Clear();
+            return CustomerSaveResult.DuplicatePppoeUsername;
+        }
+    }
+
+    private static bool IsUniqueViolation(DbUpdateException ex)
+        => ex.InnerException is SqlException sql && UniqueViolationErrors.Contains(sql.Number);
 }

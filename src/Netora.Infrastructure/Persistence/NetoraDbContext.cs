@@ -11,6 +11,8 @@ public sealed class NetoraDbContext(DbContextOptions<NetoraDbContext> options)
 {
     public DbSet<SecurityEvent> SecurityEvents => Set<SecurityEvent>();
     public DbSet<Customer> Customers => Set<Customer>();
+    public DbSet<CustomerActivity> CustomerActivities => Set<CustomerActivity>();
+    public DbSet<CustomerAttachment> CustomerAttachments => Set<CustomerAttachment>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

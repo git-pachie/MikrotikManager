@@ -26,3 +26,9 @@
     s.addEventListener('change', function () { if (s.form) s.form.submit(); });
   });
 })();
+
+// Forms with data-confirm ask before submitting (used for deletes).
+document.addEventListener('submit', function (e) {
+  var form = e.target;
+  if (form instanceof HTMLFormElement && form.dataset.confirm && !window.confirm(form.dataset.confirm)) e.preventDefault();
+});

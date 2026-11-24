@@ -1,11 +1,13 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Netora.Application.Customers;
+using Netora.Application.Customers.Attachments;
 using Netora.Domain.Customers;
 using Netora.Infrastructure.Persistence;
 
 namespace Netora.Infrastructure.Customers;
 
-internal sealed class CustomerQueries(NetoraDbContext db) : ICustomerQueries
+internal sealed class CustomerQueries(NetoraDbContext db, IOptions<AttachmentOptions> attachmentOptions) : ICustomerQueries
 {
     public async Task<CustomerListDto> ListAsync(CustomerListQuery query, bool includeManagerOnly, CancellationToken cancellationToken)
     {
@@ -50,8 +52,7 @@ internal sealed class CustomerQueries(NetoraDbContext db) : ICustomerQueries
         var totalPages = Math.Max(1, (int)Math.Ceiling(totalMatching / (double)pageSize));
         var page = Math.Clamp(query.Page, 1, totalPages);
 
-        var rows = await filtered
-            .OrderBy(c => c.Id)
+        var rows = await ApplySort(filtered, query)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .Select(c => new
@@ -79,6 +80,59 @@ internal sealed class CustomerQueries(NetoraDbContext db) : ICustomerQueries
             .ToListAsync(cancellationToken);
         naps.Insert(0, Customer.UnknownNap);
         return new CustomerFormOptionsDto(plans, naps);
+    }
+
+    public async Task<CustomerDetailDto?> GetDetailAsync(int id, bool viewerIsManager, CancellationToken cancellationToken)
+    {
+        // Same visibility rule as the list: a hidden customer is indistinguishable from a missing one.
+        var customer = await db.Customers.AsNoTracking()
+            .FirstOrDefaultAsync(c => c.Id == id && (viewerIsManager || !c.IsManagerOnly), cancellationToken);
+        if (customer is null) return null;
+
+        var activity = await db.CustomerActivities.AsNoTracking()
+            .Where(a => a.CustomerId == id)
+            .OrderByDescending(a => a.OccurredAtUtc).ThenByDescending(a => a.Id)
+            .Take(50)
+            .Select(a => new CustomerActivityDto(a.OccurredAtUtc, a.Action, a.Detail, a.ActorUserName, a.Outcome))
+            .ToListAsync(cancellationToken);
+
+        // Deleted attachments are hidden here but kept in the table and on disk (retention).
+        var attachmentRows = await db.CustomerAttachments.AsNoTracking()
+            .Where(a => a.CustomerId == id && !a.IsDeleted)
+            .OrderByDescending(a => a.UploadedAtUtc).ThenByDescending(a => a.Id)
+            .ToListAsync(cancellationToken);
+        var attachments = attachmentRows.Select(AttachmentFileTypes.ToDto).ToList();
+
+        return new CustomerDetailDto(
+            customer.Id, Customer.DisplayId(customer.Id), customer.FirstName, customer.LastName, customer.MobileNumber,
+            customer.Email, customer.Address, customer.Notes, customer.PppoeUsername, customer.PlanName, customer.NapBox,
+            customer.OnuSerial, customer.OnuModel, customer.Status.ToString(), customer.IsManagerOnly,
+            customer.CreatedAtUtc, customer.UpdatedAtUtc, customer.ConcurrencyStamp,
+            customer.CanBeChangedBy(viewerIsManager), customer.ServiceFieldsLocked, activity, attachments,
+            attachmentOptions.Value.MaxFileSizeBytes);
+    }
+
+    /// <summary>
+    /// Sorts by a whitelisted column. The Id tie-breaker keeps paging stable when many rows share a value.
+    /// Default (no or unknown column) is the original order: by ID, which is the order of creation.
+    /// </summary>
+    private static IOrderedQueryable<Customer> ApplySort(IQueryable<Customer> source, CustomerListQuery query)
+    {
+        var desc = query.Descending;
+        var column = query.SortBy?.Trim().ToLowerInvariant();
+        return column switch
+        {
+            "name" => desc
+                ? source.OrderByDescending(c => c.LastName).ThenByDescending(c => c.FirstName).ThenBy(c => c.Id)
+                : source.OrderBy(c => c.LastName).ThenBy(c => c.FirstName).ThenBy(c => c.Id),
+            "username" => desc ? source.OrderByDescending(c => c.PppoeUsername).ThenBy(c => c.Id) : source.OrderBy(c => c.PppoeUsername).ThenBy(c => c.Id),
+            "plan" => desc ? source.OrderByDescending(c => c.PlanName).ThenBy(c => c.Id) : source.OrderBy(c => c.PlanName).ThenBy(c => c.Id),
+            "nap" => desc ? source.OrderByDescending(c => c.NapBox).ThenBy(c => c.Id) : source.OrderBy(c => c.NapBox).ThenBy(c => c.Id),
+            "onu" => desc ? source.OrderByDescending(c => c.OnuSerial).ThenBy(c => c.Id) : source.OrderBy(c => c.OnuSerial).ThenBy(c => c.Id),
+            "status" => desc ? source.OrderByDescending(c => c.Status).ThenBy(c => c.Id) : source.OrderBy(c => c.Status).ThenBy(c => c.Id),
+            "created" => desc ? source.OrderByDescending(c => c.CreatedAtUtc).ThenBy(c => c.Id) : source.OrderBy(c => c.CreatedAtUtc).ThenBy(c => c.Id),
+            _ => source.OrderBy(c => c.Id),
+        };
     }
 
     private static bool IsAll(string value) => string.Equals(value, "All", StringComparison.OrdinalIgnoreCase);

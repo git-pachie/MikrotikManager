@@ -2,6 +2,23 @@ using FluentValidation;
 
 namespace Netora.Application.Customers;
 
+/// <summary>Fields shared by the Add and Edit Customer forms (approved form customer-form.html).</summary>
+public interface ICustomerFields
+{
+    string FirstName { get; }
+    string LastName { get; }
+    string? MobileNumber { get; }
+    string? Email { get; }
+    string Address { get; }
+    string? Notes { get; }
+    string PppoeUsername { get; }
+    string PlanName { get; }
+    string? NapBox { get; }
+    string? OnuSerial { get; }
+    string? OnuModel { get; }
+    bool IsManagerOnly { get; }
+}
+
 /// <summary>Fields of the approved Add/Edit Customer form.</summary>
 public sealed record CreateCustomerRequest(
     string FirstName,
@@ -15,14 +32,15 @@ public sealed record CreateCustomerRequest(
     string? NapBox,
     string? OnuSerial,
     string? OnuModel,
-    bool IsManagerOnly);
+    bool IsManagerOnly) : ICustomerFields;
 
-public sealed class CreateCustomerRequestValidator : AbstractValidator<CreateCustomerRequest>
+/// <summary>One set of rules for both forms, so Add and Edit can never disagree about what is valid.</summary>
+public abstract class CustomerFieldsValidator<T> : AbstractValidator<T> where T : ICustomerFields
 {
     public const string PppoeUsernamePattern = "^[A-Za-z0-9._-]{3,40}$";
     public const string MobilePattern = @"^[0-9+()\- ]{7,30}$";
 
-    public CreateCustomerRequestValidator()
+    protected CustomerFieldsValidator()
     {
         RuleFor(x => x.FirstName).NotEmpty().MaximumLength(100);
         RuleFor(x => x.LastName).NotEmpty().MaximumLength(100);
@@ -42,6 +60,8 @@ public sealed class CreateCustomerRequestValidator : AbstractValidator<CreateCus
     }
 }
 
+public sealed class CreateCustomerRequestValidator : CustomerFieldsValidator<CreateCustomerRequest>;
+
 public enum CreateCustomerOutcome
 {
     Created,
@@ -60,8 +80,14 @@ public sealed record CreatedCustomerDto(int Id, string Status);
 /// <summary>Provisional dropdown options until modules 05 (Plans) and 06 (NAP) provide real lists.</summary>
 public sealed record CustomerFormOptionsDto(IReadOnlyList<string> Plans, IReadOnlyList<string> NapBoxes);
 
+/// <summary>The signed-in user performing a command. Built from the server-side token, never from request data.</summary>
+public sealed record CustomerActor(string UserId, string UserName, bool IsManager);
+
 public interface ICustomerCommands
 {
-    Task<CreateCustomerResult> CreateAsync(CreateCustomerRequest request, string actorUserId, bool actorIsManager,
+    Task<CreateCustomerResult> CreateAsync(CreateCustomerRequest request, CustomerActor actor,
+        CancellationToken cancellationToken);
+
+    Task<UpdateCustomerResult> UpdateAsync(int id, UpdateCustomerRequest request, CustomerActor actor,
         CancellationToken cancellationToken);
 }

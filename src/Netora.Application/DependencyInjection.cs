@@ -11,6 +11,7 @@ public static class DependencyInjection
         services.AddValidatorsFromAssembly(typeof(DependencyInjection).Assembly, includeInternalTypes: true);
         services.AddScoped<IHealthService, HealthService>();
         services.AddScoped<Customers.ICustomerCommands, Customers.CustomerCommands>();
+        services.AddScoped<Customers.Attachments.ICustomerAttachmentService, Customers.Attachments.CustomerAttachmentService>();
         return services;
     }
 }

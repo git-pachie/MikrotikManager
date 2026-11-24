@@ -18,9 +18,12 @@ public sealed class CustomersController(ICustomerQueries customers, ICustomerCom
     [ProducesResponseType(typeof(ApiResponse<CustomerListDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> List(
         [FromQuery] string? search, [FromQuery] string? status, [FromQuery] string? nap, [FromQuery] string? plan,
-        [FromQuery] int page = 1, [FromQuery] int pageSize = 10, CancellationToken cancellationToken = default)
+        [FromQuery] int page = 1, [FromQuery] int pageSize = 10,
+        [FromQuery] string? sortBy = null, [FromQuery] string? sortDir = null, CancellationToken cancellationToken = default)
     {
-        var query = new CustomerListQuery(Trim(search, 100), Trim(status, 20), Trim(nap, 50), Trim(plan, 100), page, pageSize);
+        var query = new CustomerListQuery(Trim(search, 100), Trim(status, 20), Trim(nap, 50), Trim(plan, 100), page, pageSize,
+            CustomerListQuery.SortColumns.Contains(sortBy?.Trim().ToLowerInvariant()) ? sortBy!.Trim().ToLowerInvariant() : null,
+            string.Equals(sortDir, "desc", StringComparison.OrdinalIgnoreCase) ? "desc" : "asc");
         var result = await customers.ListAsync(query, includeManagerOnly: IsManager, cancellationToken);
         return Ok(ApiResponse<CustomerListDto>.Ok(result, HttpContext.TraceIdentifier));
     }
@@ -45,13 +48,12 @@ public sealed class CustomersController(ICustomerQueries customers, ICustomerCom
     [ProducesResponseType(typeof(ApiResponse<CreatedCustomerDto>), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Create([FromBody] CreateCustomerRequest request, CancellationToken cancellationToken)
     {
-        var actorId = User.FindFirst(NetoraClaimTypes.Subject)?.Value;
-        if (string.IsNullOrEmpty(actorId))
+        var actor = CurrentActor();
+        if (actor is null)
             return Unauthorized(ApiResponse<CreatedCustomerDto>.Fail("unauthorized", "Authentication is required.", HttpContext.TraceIdentifier));
 
-        var result = await commands.CreateAsync(request, actorId, IsManager, cancellationToken);
+        var result = await commands.CreateAsync(request, actor, cancellationToken);
         var traceId = HttpContext.TraceIdentifier;
-
         return result.Outcome switch
         {
             CreateCustomerOutcome.Created => StatusCode(StatusCodes.Status201Created,
@@ -64,6 +66,80 @@ public sealed class CustomersController(ICustomerQueries customers, ICustomerCom
                 ApiResponse<CreatedCustomerDto>.Fail("forbidden", "Only Managers can restrict customer visibility.", traceId)),
             _ => throw new InvalidOperationException($"Unhandled outcome {result.Outcome}"),
         };
+    }
+
+    /// <summary>
+    /// One customer with its activity history. Returns 404 both when the customer does not exist and when it is
+    /// Manager-only and the caller is Staff, so Staff cannot learn that a restricted customer exists.
+    /// </summary>
+    [HttpGet("{id:int}")]
+    [ProducesResponseType(typeof(ApiResponse<CustomerDetailDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<CustomerDetailDto>), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Get(int id, CancellationToken cancellationToken)
+    {
+        var detail = await customers.GetDetailAsync(id, viewerIsManager: IsManager, cancellationToken);
+        var traceId = HttpContext.TraceIdentifier;
+        return detail is null
+            ? NotFound(ApiResponse<CustomerDetailDto>.Fail("not_found", "Customer not found.", traceId))
+            : Ok(ApiResponse<CustomerDetailDto>.Ok(detail, traceId));
+    }
+
+    /// <summary>
+    /// Edits a customer's profile. Status is not editable here (approvals and router provisioning own it).
+    /// PPPoE Username and Internet Plan of an Active or Disabled customer are locked, and Terminated customers are
+    /// read-only. Send the ConcurrencyStamp read with the customer; a stale stamp returns 409.
+    /// </summary>
+    [HttpPut("{id:int}")]
+    [ProducesResponseType(typeof(ApiResponse<UpdatedCustomerDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<UpdatedCustomerDto>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse<UpdatedCustomerDto>), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse<UpdatedCustomerDto>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<UpdatedCustomerDto>), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Update(int id, [FromBody] UpdateCustomerRequest request, CancellationToken cancellationToken)
+    {
+        var actor = CurrentActor();
+        if (actor is null)
+            return Unauthorized(ApiResponse<UpdatedCustomerDto>.Fail("unauthorized", "Authentication is required.", HttpContext.TraceIdentifier));
+
+        var result = await commands.UpdateAsync(id, request, actor, cancellationToken);
+        var traceId = HttpContext.TraceIdentifier;
+        switch (result.Outcome)
+        {
+            case UpdateCustomerOutcome.Updated:
+            case UpdateCustomerOutcome.NoChanges:
+                var detail = await customers.GetDetailAsync(id, IsManager, cancellationToken);
+                return Ok(ApiResponse<UpdatedCustomerDto>.Ok(
+                    new UpdatedCustomerDto(id, detail?.ConcurrencyStamp ?? string.Empty, result.Outcome == UpdateCustomerOutcome.Updated), traceId));
+            case UpdateCustomerOutcome.ValidationFailed:
+                return BadRequest(ApiResponse<UpdatedCustomerDto>.Fail(
+                    "validation_failed", "One or more validation errors occurred.", traceId, result.Errors));
+            case UpdateCustomerOutcome.NotFound:
+                return NotFound(ApiResponse<UpdatedCustomerDto>.Fail("not_found", "Customer not found.", traceId));
+            case UpdateCustomerOutcome.Locked:
+                return Conflict(ApiResponse<UpdatedCustomerDto>.Fail(
+                    "customer_locked", "Terminated customers are read-only.", traceId));
+            case UpdateCustomerOutcome.ServiceFieldsLocked:
+                return Conflict(ApiResponse<UpdatedCustomerDto>.Fail(
+                    "service_fields_locked", "PPPoE Username and Internet Plan can only be changed through a Manager-approved request.", traceId, result.Errors));
+            case UpdateCustomerOutcome.DuplicatePppoeUsername:
+                return Conflict(ApiResponse<UpdatedCustomerDto>.Fail(
+                    "duplicate_pppoe_username", "This PPPoE Username is already in use.", traceId, result.Errors));
+            case UpdateCustomerOutcome.ManagerOnlyNotAllowed:
+                return StatusCode(StatusCodes.Status403Forbidden,
+                    ApiResponse<UpdatedCustomerDto>.Fail("forbidden", "Only Managers can restrict customer visibility.", traceId));
+            case UpdateCustomerOutcome.Conflict:
+                return Conflict(ApiResponse<UpdatedCustomerDto>.Fail(
+                    "concurrency_conflict", "This customer was changed by someone else. Reload and try again.", traceId));
+            default:
+                throw new InvalidOperationException($"Unhandled outcome {result.Outcome}");
+        }
+    }
+
+    private CustomerActor? CurrentActor()
+    {
+        var userId = User.FindFirst(NetoraClaimTypes.Subject)?.Value;
+        if (string.IsNullOrEmpty(userId)) return null;
+        return new CustomerActor(userId, User.FindFirst(NetoraClaimTypes.Name)?.Value ?? userId, IsManager);
     }
 
     private bool IsManager => User.IsInRole(Roles.Manager);

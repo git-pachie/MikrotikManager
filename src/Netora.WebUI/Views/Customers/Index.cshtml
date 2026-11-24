@@ -45,6 +45,11 @@
 
 <section class="panel" aria-label="Customer records">
     <form class="filters" id="filters" method="get" action="/customers">
+        @if (Model.SortBy is not null)
+        {
+            <input type="hidden" name="sortBy" value="@Model.SortBy">
+            <input type="hidden" name="sortDir" value="@(Model.Descending ? "desc" : "asc")">
+        }
         <div class="field">
             <label for="search">&nbsp;</label>
             <div class="search-wrap">
@@ -87,7 +92,16 @@
 
     <div class="table-scroll">
         <table class="customers-table">
-            <thead><tr><th>#</th><th>Customer Name</th><th>PPPoE Username</th><th>Plan</th><th>NAP Box</th><th>ONU Serial</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead>
+            <thead>
+                <tr>
+                    <th>#</th>
+                    @foreach (var (column, label) in new[] { ("name", "Customer Name"), ("username", "PPPoE Username"), ("plan", "Plan"), ("nap", "NAP Box"), ("onu", "ONU Serial"), ("status", "Status"), ("created", "Created") })
+                    {
+                        <th aria-sort="@Model.AriaSort(column)"><a class="th-sort" href="@Model.SortUrl(column)">@label<span class="sort-mark" aria-hidden="true">@(Model.SortBy == column ? (Model.Descending ? "▼" : "▲") : "")</span></a></th>
+                    }
+                    <th>Actions</th>
+                </tr>
+            </thead>
             <tbody>
                 @if (data.Items.Count == 0)
                 {
@@ -100,7 +114,7 @@
                     var unknownNap = c.NapBox == "UNKNOWN";
                     <tr>
                         <td>@rowNumber</td>
-                        <td class="name">@c.Name</td>
+                        <td class="name"><a class="customer-link" href="/customers/@c.Id">@c.Name</a></td>
                         <td>@c.PppoeUsername</td>
                         <td>@c.PlanName</td>
                         <td><span class="pill @(unknownNap ? "unknown" : "nap")">@c.NapBox</span></td>
@@ -117,7 +131,14 @@
                         <td>@c.CreatedAtUtc.ToLocalTime().ToString("MMM d, yyyy", CultureInfo.InvariantCulture)</td>
                         <td>
                             <div class="actions">
-                                <button type="button" class="action-btn primary" disabled title="Edit customer: @later.ToLowerInvariant()" aria-label="Edit @c.Name"><svg class="icon"><use href="#edit" /></svg></button>
+                                @if (c.Status == "Terminated" && !User.IsInRole("Manager"))
+                                {
+                                    <button type="button" class="action-btn primary" disabled title="Terminated customers are view-only for Staff" aria-label="Edit @c.Name"><svg class="icon"><use href="#edit" /></svg></button>
+                                }
+                                else
+                                {
+                                    <a class="action-btn primary" href="/customers/@c.Id/edit" title="Edit customer" aria-label="Edit @c.Name"><svg class="icon"><use href="#edit" /></svg></a>
+                                }
                                 <button type="button" class="action-btn" disabled title="Diagnostics: @later.ToLowerInvariant()" aria-label="Diagnostics for @c.PppoeUsername"><svg class="icon"><use href="#pulse" /></svg></button>
                                 <button type="button" class="action-btn" disabled title="More actions: @later.ToLowerInvariant()" aria-label="More actions for @c.Name"><svg class="icon"><use href="#more" /></svg></button>
                             </div>

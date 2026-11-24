@@ -14,3 +14,5 @@ secrets.json
 # Logs
 logs/
 *.log
+# Uploaded customer attachments (default Attachments:StoragePath)
+App_Data/

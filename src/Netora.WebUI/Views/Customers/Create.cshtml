@@ -14,7 +14,6 @@
     </div>
     <div class="heading-actions"><a class="btn btn-outline" href="/customers">Customers</a></div>
 </div>
-
 @if (formError is not null)
 {
     <div class="form-alert" role="alert">@formError</div>
@@ -23,57 +22,6 @@
 {
     <div class="form-alert" role="alert">@Model.OptionsError</div>
 }
-
 <form asp-controller="Customers" asp-action="Create" method="post" id="customerForm" novalidate>
-    <section class="panel module-panel">
-        <div class="module-head"><h2>Customer Information</h2></div>
-        <div class="module-fields">
-            <label>First Name *<input asp-for="FirstName" required maxlength="100" placeholder="Juan"><span asp-validation-for="FirstName" class="field-error"></span></label>
-            <label>Last Name *<input asp-for="LastName" required maxlength="100" placeholder="Dela Cruz"><span asp-validation-for="LastName" class="field-error"></span></label>
-            <label>Mobile Number<input asp-for="MobileNumber" maxlength="30" placeholder="0917 555 0101" inputmode="tel"><span asp-validation-for="MobileNumber" class="field-error"></span></label>
-            <label>Email<input asp-for="Email" type="email" maxlength="256" placeholder="juan@example.com"><span asp-validation-for="Email" class="field-error"></span></label>
-            <label class="span-2">Installation Address *<input asp-for="Address" required maxlength="300" placeholder="Barangay, city, province"><span asp-validation-for="Address" class="field-error"></span></label>
-            <label class="span-2">Notes<input asp-for="Notes" maxlength="1000" placeholder="Optional notes"><span asp-validation-for="Notes" class="field-error"></span></label>
-        </div>
-    </section>
-
-    <section class="panel module-panel">
-        <div class="module-head"><h2>PPPoE &amp; Subscription</h2></div>
-        <div class="module-fields">
-            <label>PPPoE Username *<input asp-for="PppoeUsername" required maxlength="40" pattern="[A-Za-z0-9._\-]{3,40}" placeholder="juan_dc" autocomplete="off"><span asp-validation-for="PppoeUsername" class="field-error"></span></label>
-            <label>Internet Plan *
-                <select asp-for="PlanName" required>
-                    <option value="">Select Plan</option>
-                    @foreach (var p in Model.PlanOptions)
-                    {
-                        <option value="@p" selected="@(p == Model.PlanName)">@p</option>
-                    }
-                </select>
-                <span asp-validation-for="PlanName" class="field-error"></span>
-            </label>
-            <label>NAP Box
-                <select asp-for="NapBox">
-                    @foreach (var n in Model.NapOptions)
-                    {
-                        <option value="@n" selected="@(n == Model.NapBox)">@n</option>
-                    }
-                </select>
-                <span asp-validation-for="NapBox" class="field-error"></span>
-            </label>
-            <label>ONU Serial Number<input asp-for="OnuSerial" maxlength="50" placeholder="Optional"><span asp-validation-for="OnuSerial" class="field-error"></span></label>
-            <label>ONU Brand / Model<input asp-for="OnuModel" maxlength="100" placeholder="Optional"><span asp-validation-for="OnuModel" class="field-error"></span></label>
-        </div>
-        @if (Model.CanSetManagerOnly)
-        {
-            <div class="module-actions">
-                <label class="module-check"><input asp-for="IsManagerOnly" type="checkbox"> Managers Only (restricted visibility)</label>
-                <span asp-validation-for="IsManagerOnly" class="field-error"></span>
-            </div>
-        }
-        <div class="module-actions">
-            <button class="btn btn-primary" type="submit">Submit for Approval</button>
-            <button class="btn btn-outline" type="reset">Clear Form</button>
-        </div>
-        <p class="module-note" role="status">Saving creates the customer as <strong>Pending Approval</strong>. A Manager must approve it before the PPPoE account is created on the router.</p>
-    </section>
+    <partial name="_CustomerFields" model="Model" />
 </form>

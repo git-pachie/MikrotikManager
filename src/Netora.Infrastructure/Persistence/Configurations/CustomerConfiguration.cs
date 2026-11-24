@@ -22,6 +22,8 @@ internal sealed class CustomerConfiguration : IEntityTypeConfiguration<Customer>
         builder.Property(c => c.Email).HasMaxLength(256);
         builder.Property(c => c.Notes).HasMaxLength(1000);
         builder.Property(c => c.CreatedByUserId).HasMaxLength(450);
+        builder.Property(c => c.UpdatedByUserId).HasMaxLength(450);
+        builder.Property(c => c.ConcurrencyStamp).HasMaxLength(32).IsRequired().IsConcurrencyToken();
         builder.Property(c => c.Status).HasConversion<string>().HasMaxLength(20);
 
         builder.HasIndex(c => c.PppoeUsername).IsUnique();

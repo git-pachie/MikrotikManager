@@ -1,0 +1,273 @@
+@model CustomerDetailViewModel
+@using Netora.Application.Customers.Attachments
+@{
+    ViewData["Title"] = "Customer Details";
+    ViewData["Nav"] = "customers";
+    var d = Model.Data;
+    const string notConnected = "Not available. Live router data is connected with the MikroTik module.";
+}
+<div class="detail-breadcrumb"><a href="/customers">Customers</a><span> / </span><strong>Customer Details</strong></div>
+<div class="heading">
+    <div class="heading-title">
+        <svg class="icon"><use href="#users" /></svg>
+        <div>
+            <h1>Customer Details</h1>
+            <p>Subscriber profile, service configuration, ONU records, and connection diagnostics.</p>
+        </div>
+    </div>
+    @if (d is not null)
+    {
+        <div class="heading-actions">
+            @if (d.IsEditable)
+            {
+                <a class="btn btn-outline" href="/customers/@d.Id/edit"><svg class="icon"><use href="#edit" /></svg>Edit Customer</a>
+            }
+            else
+            {
+                <button type="button" class="btn btn-outline" disabled title="Terminated customers are view-only for Staff"><svg class="icon"><use href="#edit" /></svg>Edit Customer</button>
+            }
+            <button type="button" class="btn btn-primary" disabled title="Plan changes need a Manager approval request. Available with the Approvals module.">Request Plan Change</button>
+        </div>
+    }
+</div>
+@if (TempData[Netora.WebUI.Controllers.CustomersController.ToastKey] is string toast)
+{
+    <div class="form-success" role="status">@toast</div>
+}
+@if (TempData[Netora.WebUI.Controllers.CustomersController.ErrorKey] is string toastError)
+{
+    <div class="form-alert" role="alert">@toastError</div>
+}
+@if (d is null)
+{
+    <section class="panel" role="alert"><p class="mb-0" style="color:var(--muted)">@Model.ErrorMessage</p></section>
+    return;
+}
+<section class="detail-hero panel">
+    <div class="detail-identity">
+        <div class="detail-avatar" aria-hidden="true">@Model.Initials</div>
+        <div>
+            <h2>@Model.FullName</h2>
+            <div class="detail-secondary">Customer ID: @d.DisplayId <span class="detail-dot">•</span> Registered @CustomerDetailViewModel.Date(d.CreatedAtUtc)</div>
+            <div class="detail-tags">
+                <span class="pill @Model.StatusPillClass">
+                    @if (d.Status == "Active") { <svg class="icon"><use href="#wifi" /></svg> }
+                    else if (d.Status == "Terminated") { <svg class="icon"><use href="#x" /></svg> }
+                    else if (d.Status == "PendingApproval") { <svg class="icon"><use href="#clipboard" /></svg> }
+                    else { <text>Ⅱ</text> }
+                    @Model.StatusLabel
+                </span>
+                <span class="pill @(d.NapBox == "UNKNOWN" ? "unknown" : "nap")">@d.NapBox</span>
+                <span class="pill detail-soft">@d.PlanName</span>
+                @if (d.IsManagerOnly) { <span class="pill detail-soft">Managers only</span> }
+            </div>
+        </div>
+    </div>
+    <div class="detail-live">
+        <span class="detail-live-label">PPPoE Connection</span>
+        <div class="detail-live-value">Not checked</div>
+        <span class="detail-secondary">Live router status is not connected yet</span>
+    </div>
+</section>
+@if (d.Status == "PendingApproval")
+{
+    <div class="detail-alert">This customer is waiting for Manager approval. No PPPoE account exists on the router yet. Approval requests are listed here once the Approvals module is available.</div>
+}
+<div class="detail-kpis">
+    <div class="panel detail-kpi"><span>PPPoE Username</span><strong>@d.PppoeUsername</strong><small>Router account status not checked</small></div>
+    <div class="panel detail-kpi"><span>Internet Plan</span><strong>@d.PlanName</strong><small>PPP profile mapping not set up</small></div>
+    <div class="panel detail-kpi"><span>NAP Assignment</span><strong>@d.NapBox</strong><small>@(d.NapBox == "UNKNOWN" ? "Not mapped to a NAP box" : "Assigned subscriber")</small></div>
+    <div class="panel detail-kpi"><span>ONU Serial</span><strong>@CustomerDetailViewModel.OrDash(d.OnuSerial)</strong><small>@(string.IsNullOrWhiteSpace(d.OnuSerial) ? "No device recorded" : "Current device record")</small></div>
+</div>
+<section class="panel detail-panel">
+    <div class="detail-tabs" role="tablist" aria-label="Customer sections">
+        <button type="button" class="detail-tab active" id="tab-overview" data-tab="overview" role="tab" aria-selected="true" aria-controls="pane-overview">Overview</button>
+        <button type="button" class="detail-tab" id="tab-pppoe" data-tab="pppoe" role="tab" aria-selected="false" aria-controls="pane-pppoe" tabindex="-1">PPPoE &amp; Diagnostics</button>
+        <button type="button" class="detail-tab" id="tab-onu" data-tab="onu" role="tab" aria-selected="false" aria-controls="pane-onu" tabindex="-1">ONU History</button>
+        <button type="button" class="detail-tab" id="tab-attachments" data-tab="attachments" role="tab" aria-selected="false" aria-controls="pane-attachments" tabindex="-1">Attachments</button>
+        <button type="button" class="detail-tab" id="tab-activity" data-tab="activity" role="tab" aria-selected="false" aria-controls="pane-activity" tabindex="-1">Activity &amp; Audit</button>
+    </div>
+
+    <div class="detail-tab-pane" id="pane-overview" data-pane="overview" role="tabpanel" aria-labelledby="tab-overview">
+        <div class="detail-columns">
+            <section class="detail-section">
+                <div class="section-head">
+                    <h3>Personal Information</h3>
+                    @if (d.IsEditable) { <a class="text-action" href="/customers/@d.Id/edit">Edit</a> }
+                </div>
+                <div class="detail-fields">
+                    <div><span>Full Name</span><strong>@Model.FullName</strong></div>
+                    <div><span>Mobile Number</span><strong>@CustomerDetailViewModel.OrDash(d.MobileNumber)</strong></div>
+                    <div><span>Email Address</span><strong>@CustomerDetailViewModel.OrDash(d.Email)</strong></div>
+                    <div><span>Customer Status</span><strong>@Model.StatusLabel</strong></div>
+                    <div class="wide"><span>Installation Address</span><strong>@CustomerDetailViewModel.OrDash(d.Address)</strong></div>
+                </div>
+            </section>
+            <section class="detail-section">
+                <div class="section-head">
+                    <h3>Subscription &amp; Network</h3>
+                    @if (d.IsEditable) { <a class="text-action" href="/customers/@d.Id/edit">Edit</a> }
+                </div>
+                <div class="detail-fields">
+                    <div><span>Internet Plan</span><strong>@d.PlanName</strong></div>
+                    <div><span>PPPoE Username</span><strong>@d.PppoeUsername</strong></div>
+                    <div><span>NAP Box</span><strong>@d.NapBox</strong></div>
+                    <div><span>ONU Record</span><strong>@(string.IsNullOrWhiteSpace(d.OnuSerial) ? "Not recorded" : "Recorded")</strong></div>
+                    <div><span>PPPoE Secret</span><strong>Not checked</strong></div>
+                    <div><span>Last Updated</span><strong>@(d.UpdatedAtUtc is { } u ? CustomerDetailViewModel.DateTime(u) : "Never edited")</strong></div>
+                </div>
+            </section>
+        </div>
+        <div class="detail-bottom">
+            <div>
+                <h3>Internal Notes</h3>
+                <p>@(string.IsNullOrWhiteSpace(d.Notes) ? "No notes recorded." : d.Notes)</p>
+            </div>
+            @if (d.IsEditable) { <a class="btn" href="/customers/@d.Id/edit">Edit Notes</a> }
+        </div>
+    </div>
+
+    <div class="detail-tab-pane" id="pane-pppoe" data-pane="pppoe" role="tabpanel" aria-labelledby="tab-pppoe" hidden>
+        <div class="section-head">
+            <h3>PPPoE Connection &amp; Diagnostics</h3>
+            <button type="button" class="btn btn-outline" disabled title="Live router refresh is available with the MikroTik module"><svg class="icon"><use href="#refresh" /></svg>Refresh Status</button>
+        </div>
+        <div class="detail-alert">Live RouterOS data is not connected yet, so the connection values below are not available. This is not a confirmed offline state.</div>
+        <div class="detail-fields detail-diagnostics">
+            <div><span>PPPoE Username</span><strong>@d.PppoeUsername</strong></div>
+            <div><span>Secret Status</span><strong>Not checked</strong></div>
+            <div><span>Session Status</span><strong>Not available</strong></div>
+            <div><span>Assigned IP</span><strong>Not available</strong></div>
+            <div><span>Profile (expected)</span><strong>@d.PlanName</strong></div>
+            <div><span>Configuration Mismatch</span><strong>Not checked</strong></div>
+        </div>
+        <h3 class="detail-subtitle">Recent PPPoE Logs</h3>
+        <div class="detail-empty">@notConnected</div>
+    </div>
+
+    <div class="detail-tab-pane" id="pane-onu" data-pane="onu" role="tabpanel" aria-labelledby="tab-onu" hidden>
+        <div class="section-head">
+            <h3>ONU Information &amp; Replacement History</h3>
+            <button type="button" class="btn btn-outline" disabled title="Recording ONU replacements is available with the ONU module">Record Replacement</button>
+        </div>
+        <div class="detail-fields detail-diagnostics">
+            <div><span>Serial Number</span><strong>@(string.IsNullOrWhiteSpace(d.OnuSerial) ? "Not recorded" : d.OnuSerial)</strong></div>
+            <div><span>Brand / Model</span><strong>@(string.IsNullOrWhiteSpace(d.OnuModel) ? "Not recorded" : d.OnuModel)</strong></div>
+        </div>
+        <h3 class="detail-subtitle">Replacement History</h3>
+        <div class="detail-empty">No ONU replacements recorded. Replacement history is kept by the ONU module.</div>
+    </div>
+
+    <div class="detail-tab-pane" id="pane-attachments" data-pane="attachments" role="tabpanel" aria-labelledby="tab-attachments" hidden>
+        <div class="section-head">
+            <h3>Customer Attachments</h3>
+            @if (d.IsEditable)
+            {
+                <form class="attach-form" id="attachmentForm" asp-controller="Customers" asp-action="UploadAttachment" asp-route-id="@d.Id" method="post" enctype="multipart/form-data">
+                    @* The native picker is hidden; the button opens it and choosing a file uploads straight away (details.js). *@
+                    <input id="attachmentFile" class="attach-input" name="file" type="file" required tabindex="-1" aria-hidden="true" accept="@AttachmentFileTypes.AcceptList" data-max-bytes="@d.MaxAttachmentBytes" data-max-label="@AttachmentFileTypes.FormatSize(d.MaxAttachmentBytes)">
+                    <button type="button" class="btn btn-outline" id="attachmentPick" aria-describedby="attachmentRules"><svg class="icon"><use href="#upload" /></svg><span>Upload File</span></button>
+                </form>
+            }
+        </div>
+        <p class="module-note" id="attachmentRules">@AttachmentFileTypes.Labels only, up to @AttachmentFileTypes.FormatSize(d.MaxAttachmentBytes) per file.@(d.IsEditable ? "" : " This customer is terminated: Staff can view and download files only.")</p>
+        @if (d.Attachments.Count == 0)
+        {
+            <div class="detail-empty">No files uploaded.</div>
+        }
+        else
+        {
+            <div class="table-scroll">
+                <table class="customers-table detail-table">
+                    <thead><tr><th>File</th><th>Type</th><th>Size</th><th>Uploaded By</th><th>Uploaded</th><th>Actions</th></tr></thead>
+                    <tbody>
+                        @foreach (var f in d.Attachments)
+                        {
+                            <tr>
+                                <td class="name">
+                                    @if (f.FileType is "PNG" or "JPG")
+                                    {
+                                        <a class="customer-link" href="/customers/@d.Id/attachments/@f.Id" data-gallery data-name="@f.FileName" title="View image">@f.FileName</a>
+                                    }
+                                    else
+                                    {
+                                        <a class="customer-link" href="/customers/@d.Id/attachments/@f.Id" title="Download">@f.FileName</a>
+                                    }
+                                </td>
+                                <td>@f.FileType</td>
+                                <td>@AttachmentFileTypes.FormatSize(f.SizeBytes)</td>
+                                <td>@f.UploadedBy</td>
+                                <td>@CustomerDetailViewModel.DateTime(f.UploadedAtUtc)</td>
+                                <td>
+                                    <div class="actions">
+                                        <a class="action-btn" href="/customers/@d.Id/attachments/@f.Id" title="Download" aria-label="Download @f.FileName"><svg class="icon"><use href="#file" /></svg></a>
+                                        @if (d.IsEditable)
+                                        {
+                                            <form asp-controller="Customers" asp-action="DeleteAttachment" asp-route-id="@d.Id" asp-route-attachmentId="@f.Id" method="post" data-confirm="Delete @f.FileName? It will no longer be listed.">
+                                                <button type="submit" class="action-btn" title="Delete" aria-label="Delete @f.FileName"><svg class="icon"><use href="#x" /></svg></button>
+                                            </form>
+                                        }
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+
+    <div class="detail-tab-pane" id="pane-activity" data-pane="activity" role="tabpanel" aria-labelledby="tab-activity" hidden>
+        <div class="section-head"><h3>Activity &amp; Audit Trail</h3></div>
+        @if (d.Activity.Count == 0)
+        {
+            <div class="detail-empty">No activity recorded for this customer yet. Customers created before activity tracking have no earlier history.</div>
+        }
+        else
+        {
+            <div class="table-scroll">
+                <table class="customers-table detail-table">
+                    <thead><tr><th>Date</th><th>Action</th><th>Details</th><th>Performed By</th><th>Result</th></tr></thead>
+                    <tbody>
+                        @foreach (var a in d.Activity)
+                        {
+                            <tr>
+                                <td>@CustomerDetailViewModel.DateTime(a.OccurredAtUtc)</td>
+                                <td>@CustomerDetailViewModel.ActionLabel(a.Action)</td>
+                                <td>@CustomerDetailViewModel.OrDash(a.Detail)</td>
+                                <td>@a.PerformedBy</td>
+                                <td>@a.Outcome</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</section>
+@if (d.Attachments.Any(a => a.FileType is "PNG" or "JPG"))
+{
+    <dialog class="image-viewer" id="imageViewer" aria-labelledby="imageViewerTitle">
+        <div class="viewer-head">
+            <div>
+                <h3 id="imageViewerTitle">Image</h3>
+                <span class="viewer-count" id="imageViewerCount" aria-live="polite"></span>
+            </div>
+            <div class="viewer-tools">
+                <a class="btn btn-outline" id="imageViewerDownload" href="#"><svg class="icon"><use href="#file" /></svg>Download</a>
+                <button type="button" class="action-btn" id="imageViewerClose" aria-label="Close"><svg class="icon"><use href="#x" /></svg></button>
+            </div>
+        </div>
+        <div class="viewer-stage">
+            <button type="button" class="viewer-nav prev" id="imageViewerPrev" aria-label="Previous image"><svg class="icon"><use href="#chevron" /></svg></button>
+            <img id="imageViewerImg" alt="">
+            <p class="viewer-error" id="imageViewerError" hidden>The image could not be loaded.</p>
+            <button type="button" class="viewer-nav next" id="imageViewerNext" aria-label="Next image"><svg class="icon"><use href="#chevron" /></svg></button>
+        </div>
+        <div class="viewer-thumbs" id="imageViewerThumbs" role="list" aria-label="All images"></div>
+    </dialog>
+}
+@section Scripts {
+    <script src="~/js/details.js" asp-append-version="true"></script>
+    <script src="~/js/attachments.js" asp-append-version="true"></script>
+}

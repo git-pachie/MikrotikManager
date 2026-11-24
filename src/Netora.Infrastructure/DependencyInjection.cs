@@ -52,6 +52,13 @@ public static class DependencyInjection
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<Netora.Application.Customers.ICustomerQueries, Customers.CustomerQueries>();
         services.AddScoped<Netora.Application.Customers.ICustomerRepository, Customers.CustomerRepository>();
+
+        services.AddOptions<Netora.Application.Customers.Attachments.AttachmentOptions>()
+            .Bind(configuration.GetSection(Netora.Application.Customers.Attachments.AttachmentOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+        services.AddSingleton<Netora.Application.Customers.Attachments.IAttachmentStore, Customers.FileSystemAttachmentStore>();
+        services.AddScoped<Netora.Application.Customers.Attachments.ICustomerAttachmentRepository, Customers.CustomerAttachmentRepository>();
         return services;
     }
 }

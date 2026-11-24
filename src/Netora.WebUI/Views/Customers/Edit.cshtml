@@ -1,0 +1,37 @@
+@model CustomerFormViewModel
+@{
+    ViewData["Title"] = "Edit Customer";
+    ViewData["Nav"] = "customers";
+    var formError = ViewData.ModelState[string.Empty]?.Errors.FirstOrDefault()?.ErrorMessage;
+}
+<div class="detail-breadcrumb">
+    <a href="/customers">Customers</a><span> / </span><a href="/customers/@Model.Id">@Model.DisplayId</a><span> / </span><strong>Edit</strong>
+</div>
+<div class="heading">
+    <div class="heading-title">
+        <svg class="icon"><use href="#edit" /></svg>
+        <div>
+            <h1>Edit Customer</h1>
+            <p>@Model.DisplayId <span class="detail-dot">•</span> @Model.StatusLabel. Update the subscriber profile. Status changes go through approvals.</p>
+        </div>
+    </div>
+    <div class="heading-actions"><a class="btn btn-outline" href="/customers/@Model.Id">Back to details</a></div>
+</div>
+@if (formError is not null)
+{
+    <div class="form-alert" role="alert">
+        @formError
+        @if (formError.Contains("changed by someone else"))
+        {
+            <a href="/customers/@Model.Id/edit">Reload the latest values</a>
+        }
+    </div>
+}
+@if (Model.OptionsError is not null)
+{
+    <div class="form-alert" role="alert">@Model.OptionsError</div>
+}
+<form asp-controller="Customers" asp-action="Edit" asp-route-id="@Model.Id" method="post" id="customerForm" novalidate>
+    <input asp-for="ConcurrencyStamp" type="hidden">
+    <partial name="_CustomerFields" model="Model" />
+</form>

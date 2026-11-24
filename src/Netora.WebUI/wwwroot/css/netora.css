@@ -42,3 +42,27 @@ body, button, input, select, textarea {
 .pill.pending{color:#8839df;background:#f1e8ff}
 [data-bs-theme=dark] .form-alert{background:#4a1d26;color:#ffc9d0}
 [data-bs-theme=dark] .form-success{background:#123d26;color:#bff2cf}
+/* Added with module 03: sortable column headers, and action buttons rendered as links. */
+.th-sort{color:inherit;text-decoration:none;display:inline-flex;align-items:center;gap:5px}.th-sort:hover{color:var(--blue)}.sort-mark{font-size:9px;color:var(--blue)}
+a.action-btn,a.text-action{text-decoration:none}
+/* Bootstrap's disabled state would swap in its own blue; keep the approved Netora blue, just faded. */
+.btn-primary:disabled{background:var(--blue);border-color:var(--blue);color:#fff;opacity:.45}
+/* Added for attachments (03.05): upload control in the section header. */
+.attach-form{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.attach-input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}.actions form{margin:0}
+/* Image viewer for attachments (native <dialog>; no Bootstrap JS). Colours come from the theme variables. */
+.image-viewer{width:min(1100px,94vw);max-height:92vh;padding:0;border:1px solid var(--border);border-radius:14px;background:var(--surface);color:var(--ink);box-shadow:0 18px 50px #001c4d55;overflow:hidden}
+.image-viewer::backdrop{background:rgba(6,20,45,.72)}
+.viewer-head{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 18px;border-bottom:1px solid var(--border)}
+.viewer-head h3{font-size:15px;font-weight:600;margin:0;overflow-wrap:anywhere}.viewer-count{font-size:12px;color:var(--muted)}
+.viewer-tools{display:flex;align-items:center;gap:8px}.viewer-tools .btn{min-height:34px;padding:6px 12px}
+.viewer-stage{position:relative;display:grid;place-items:center;background:var(--bg);height:min(64vh,640px);padding:14px 64px}
+.viewer-stage img{max-width:100%;max-height:100%;object-fit:contain;border-radius:6px}
+.viewer-error{color:var(--muted);margin:0}
+.viewer-nav{position:absolute;top:50%;transform:translateY(-50%);width:42px;height:42px;border-radius:50%;border:1px solid var(--border);background:var(--surface);color:var(--ink);display:grid;place-items:center;box-shadow:var(--shadow)}
+.viewer-nav:hover{color:var(--blue);border-color:var(--blue)}.viewer-nav.prev{left:12px}.viewer-nav.next{right:12px}
+.viewer-nav.prev .icon{transform:rotate(90deg)}.viewer-nav.next .icon{transform:rotate(-90deg)}
+.viewer-thumbs{display:flex;gap:8px;padding:12px 18px;overflow-x:auto;border-top:1px solid var(--border)}
+.viewer-thumb{flex:0 0 auto;width:72px;height:54px;padding:0;border:2px solid transparent;border-radius:7px;background:var(--bg);overflow:hidden;opacity:.65}
+.viewer-thumb img{width:100%;height:100%;object-fit:cover}.viewer-thumb.active{border-color:var(--blue);opacity:1}.viewer-thumb:hover{opacity:1}
+@media(max-width:620px){.viewer-stage{padding:10px 8px;height:55vh}.viewer-nav{width:36px;height:36px}.viewer-nav.prev{left:6px}.viewer-nav.next{right:6px}.viewer-tools .btn{padding:6px 9px}}
+.viewer-tools .action-btn{color:var(--ink);width:34px;height:34px}

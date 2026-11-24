@@ -3,6 +3,7 @@ using System.Text.Json;
 using Netora.Application.Auth;
 using Netora.Application.Common;
 using Netora.Application.Customers;
+using Netora.Application.Customers.Attachments;
 using Netora.Application.Health;
 
 namespace Netora.WebUI.Services;
@@ -21,7 +22,20 @@ public interface INetoraApiClient
     Task<ApiResponse<CustomerFormOptionsDto>> GetCustomerFormOptionsAsync(CancellationToken cancellationToken);
 
     Task<ApiResponse<CreatedCustomerDto>> CreateCustomerAsync(CreateCustomerRequest request, CancellationToken cancellationToken);
+    Task<ApiResponse<CustomerDetailDto>> GetCustomerAsync(int id, CancellationToken cancellationToken);
+    Task<ApiResponse<UpdatedCustomerDto>> UpdateCustomerAsync(int id, UpdateCustomerRequest request, CancellationToken cancellationToken);
+    Task<ApiResponse<AttachmentDto>> UploadAttachmentAsync(int customerId, Stream content, string fileName, CancellationToken cancellationToken);
+    Task<ApiResponse<object>> DeleteAttachmentAsync(int customerId, long attachmentId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Starts streaming a file from the API. On success the caller owns <see cref="ApiFile.Response"/> and must dispose
+    /// it after the body has been sent.
+    /// </summary>
+    Task<ApiFile> DownloadAttachmentAsync(int customerId, long attachmentId, CancellationToken cancellationToken);
 }
+
+/// <summary>A streamed file from the API, or the error code when there is none.</summary>
+public sealed record ApiFile(HttpResponseMessage? Response, string? ErrorCode);
 
 public sealed class NetoraApiClient(HttpClient httpClient, ILogger<NetoraApiClient> logger) : INetoraApiClient
 {
@@ -40,7 +54,46 @@ public sealed class NetoraApiClient(HttpClient httpClient, ILogger<NetoraApiClie
     public Task<ApiResponse<CreatedCustomerDto>> CreateCustomerAsync(CreateCustomerRequest request, CancellationToken cancellationToken)
         => SendAsync<CreatedCustomerDto>(HttpMethod.Post, "api/v1/customers", request, cancellationToken);
 
-    public Task<ApiResponse<CustomerListDto>> GetCustomersAsync(CustomerListQuery query, CancellationToken cancellationToken)
+    public Task<ApiResponse<CustomerDetailDto>> GetCustomerAsync(int id, CancellationToken cancellationToken)
+        => SendAsync<CustomerDetailDto>(HttpMethod.Get, $"api/v1/customers/{id}", null, cancellationToken);
+
+    public Task<ApiResponse<UpdatedCustomerDto>> UpdateCustomerAsync(int id, UpdateCustomerRequest request, CancellationToken cancellationToken)
+        => SendAsync<UpdatedCustomerDto>(HttpMethod.Put, $"api/v1/customers/{id}", request, cancellationToken);
+
+    public Task<ApiResponse<AttachmentDto>> UploadAttachmentAsync(int customerId, Stream content, string fileName,
+        CancellationToken cancellationToken)
+    {
+        // The API detects the real type from the file content; the content type sent here is not trusted.
+        var form = new MultipartFormDataContent();
+        var file = new StreamContent(content);
+        file.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
+        form.Add(file, "file", fileName);
+        return SendAsync<AttachmentDto>(HttpMethod.Post, $"api/v1/customers/{customerId}/attachments", form, cancellationToken);
+    }
+
+    public Task<ApiResponse<object>> DeleteAttachmentAsync(int customerId, long attachmentId, CancellationToken cancellationToken)
+        => SendAsync<object>(HttpMethod.Delete, $"api/v1/customers/{customerId}/attachments/{attachmentId}", null, cancellationToken);
+
+    public async Task<ApiFile> DownloadAttachmentAsync(int customerId, long attachmentId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"api/v1/customers/{customerId}/attachments/{attachmentId}");
+            var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            if (response.IsSuccessStatusCode) return new ApiFile(response, null);
+
+            var code = response.StatusCode == System.Net.HttpStatusCode.NotFound ? "not_found" : "download_failed";
+            response.Dispose();
+            return new ApiFile(null, code);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            logger.LogWarning(ex, "Web API attachment download failed");
+            return new ApiFile(null, "api_unreachable");
+        }
+    }
+
+        public Task<ApiResponse<CustomerListDto>> GetCustomersAsync(CustomerListQuery query, CancellationToken cancellationToken)
     {
         var parts = new List<string> { $"page={query.Page}", $"pageSize={query.PageSize}" };
         void Add(string key, string? value)
@@ -51,6 +104,8 @@ public sealed class NetoraApiClient(HttpClient httpClient, ILogger<NetoraApiClie
         Add("status", query.Status);
         Add("nap", query.Nap);
         Add("plan", query.Plan);
+        Add("sortBy", query.SortBy);
+        Add("sortDir", query.SortBy is null ? null : query.SortDir);
         return SendAsync<CustomerListDto>(HttpMethod.Get, "api/v1/customers?" + string.Join("&", parts), null, cancellationToken);
     }
 
@@ -59,9 +114,17 @@ public sealed class NetoraApiClient(HttpClient httpClient, ILogger<NetoraApiClie
         try
         {
             using var request = new HttpRequestMessage(method, path);
-            if (body is not null) request.Content = JsonContent.Create(body);
+            request.Content = body as HttpContent ?? (body is null ? null : JsonContent.Create(body));
 
             using var response = await httpClient.SendAsync(request, cancellationToken);
+
+            // Some failures come from the server itself (for example 413 from Kestrel) and have no JSON envelope.
+            if (response.Content.Headers.ContentType?.MediaType?.Contains("json", StringComparison.OrdinalIgnoreCase) != true)
+            {
+                return response.StatusCode == System.Net.HttpStatusCode.RequestEntityTooLarge
+                    ? ApiResponse<T>.Fail("file_too_large", "The file is larger than the upload limit.")
+                    : ApiResponse<T>.Fail("invalid_response", $"The API returned HTTP {(int)response.StatusCode}.");
+            }
             var envelope = await response.Content.ReadFromJsonAsync<ApiResponse<T>>(cancellationToken);
             return envelope ?? ApiResponse<T>.Fail("invalid_response", "The API returned an empty response.");
         }

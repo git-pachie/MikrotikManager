@@ -46,4 +46,94 @@ public sealed class Customer
 
     /// <summary>Identity user ID of the creator. Null for sample data.</summary>
     public string? CreatedByUserId { get; set; }
+
+    public DateTimeOffset? UpdatedAtUtc { get; set; }
+
+    public string? UpdatedByUserId { get; set; }
+
+    /// <summary>
+    /// Optimistic concurrency token. Replaced on every write, so an edit made from a stale copy of the form is
+    /// rejected instead of silently overwriting a colleague's change.
+    /// </summary>
+    public string ConcurrencyStamp { get; set; } = Guid.NewGuid().ToString("N");
+
+    /// <summary>
+    /// Agreed 2026-11-24: Terminated customers are view-only for Staff; Managers may still edit their details and
+    /// attachments. Nothing is deleted on termination (03.04).
+    /// </summary>
+    public bool CanBeChangedBy(bool actorIsManager) => Status != CustomerStatus.Terminated || actorIsManager;
+
+    /// <summary>
+    /// Once a customer is Active, Disabled or Terminated a PPPoE account exists on the router (terminated accounts are
+    /// disabled, not deleted), so the PPPoE Username and the Internet Plan change only through a Manager-approved
+    /// request (module 08), never through a plain edit.
+    /// </summary>
+    public bool ServiceFieldsLocked => Status is CustomerStatus.Active or CustomerStatus.Disabled or CustomerStatus.Terminated;
+
+    /// <summary>"NET-0001" style label shown in the UI. Derived from the ID, so it needs no extra column.</summary>
+    public static string DisplayId(int id) => $"NET-{id:D4}";
+}
+
+/// <summary>
+/// One line of a customer's activity history (Customer Details, Activity tab). Stores who did what and when, with
+/// changed field names only. Never customer values such as names, phone numbers or addresses (18-logging.md).
+/// Rows are append-only and are kept after termination (03.04).
+/// </summary>
+public sealed class CustomerActivity
+{
+    public long Id { get; set; }
+
+    public int CustomerId { get; set; }
+
+    /// <summary>Stable event name, for example CustomerCreated or CustomerUpdated.</summary>
+    public string Action { get; set; } = string.Empty;
+
+    /// <summary>Extra context, for example the changed field names. No customer values.</summary>
+    public string? Detail { get; set; }
+
+    public string ActorUserId { get; set; } = string.Empty;
+
+    /// <summary>User name at the time of the action, so history stays readable if the account changes later.</summary>
+    public string ActorUserName { get; set; } = string.Empty;
+
+    public string Outcome { get; set; } = "Completed";
+
+    public DateTimeOffset OccurredAtUtc { get; set; }
+}
+
+/// <summary>
+/// A file attached to a customer (03.05). The file itself lives in the configured storage folder under
+/// <see cref="StoredFileName"/>; this row holds the metadata. Deleting only hides the row and keeps the file, so
+/// attachments stay retained for history and audit (03.04).
+/// </summary>
+public sealed class CustomerAttachment
+{
+    public long Id { get; set; }
+
+    public int CustomerId { get; set; }
+
+    /// <summary>Cleaned original name, shown to users and used as the download name. Never used as a path.</summary>
+    public string FileName { get; set; } = string.Empty;
+
+    /// <summary>Generated name inside the storage folder ({customerId}/{guid}.{ext}). Never taken from user input.</summary>
+    public string StoredFileName { get; set; } = string.Empty;
+
+    /// <summary>Detected from the file content, not from what the browser claimed.</summary>
+    public string ContentType { get; set; } = string.Empty;
+
+    public long SizeBytes { get; set; }
+
+    public string UploadedByUserId { get; set; } = string.Empty;
+
+    public string UploadedByUserName { get; set; } = string.Empty;
+
+    public DateTimeOffset UploadedAtUtc { get; set; }
+
+    public bool IsDeleted { get; set; }
+
+    public DateTimeOffset? DeletedAtUtc { get; set; }
+
+    public string? DeletedByUserId { get; set; }
+
+    public string? DeletedByUserName { get; set; }
 }
