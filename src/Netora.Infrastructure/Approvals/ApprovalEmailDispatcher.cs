@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using MimeKit;
 using Netora.Application.Approvals;
 using Netora.Application.Auth;
+using Netora.Application.Logging;
 using Netora.Domain.Approvals;
 using Netora.Infrastructure.Identity;
 
@@ -18,7 +19,8 @@ namespace Netora.Infrastructure.Approvals;
 internal sealed class ApprovalEmailDispatcher(
     ApprovalEmailNotifier notifier,
     IServiceScopeFactory scopes,
-    ILogger<ApprovalEmailDispatcher> logger) : BackgroundService
+    ILogger<ApprovalEmailDispatcher> logger,
+    IActivityLog? activity = null) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -32,8 +34,12 @@ internal sealed class ApprovalEmailDispatcher(
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
                 {
-                    logger.LogWarning("ApprovalEmailFailed RequestId={RequestId} Kind={Kind} Error={Error}",
+                    // Console keeps the description; the file gets the error type only (no addresses or server text).
+                    logger.LogInformation("ApprovalEmailFailed RequestId={RequestId} Kind={Kind} Error={Error}",
                         item.Notice.RequestId, item.Kind, SmtpEmailSender.Describe(ex));
+                    (activity ?? NullActivityLog.Instance).Write(new ActivityEvent(ActivityCategories.Application,
+                        "EmailDeliveryFailed", ActivityOutcomes.Failure, ActivityTargets.Request(item.Notice.RequestId),
+                        $"email={item.Kind} error={ex.GetType().Name}", ActivityLevel.Warning, Actor: "system"));
                 }
             }
         }

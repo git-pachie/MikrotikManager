@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using MimeKit;
 using Netora.Application.Abstractions;
 using Netora.Application.Auth;
+using Netora.Application.Logging;
 using Netora.Application.Settings;
 using Netora.Domain.Security;
 using Netora.Domain.Settings;
@@ -31,7 +32,8 @@ internal sealed class SettingsService(
     IValidator<UpdateRouterSettingsRequest> routerValidator,
     IValidator<UpdateEmailSettingsRequest> emailValidator,
     ISecurityEventWriter events,
-    ILogger<SettingsService> logger) : ISettingsService
+    ILogger<SettingsService> logger,
+    IActivityLog? activity = null) : ISettingsService
 {
     public const int DefaultRouterPort = 443;
     private readonly IDataProtector routerProtector = protection.CreateProtector("Netora.Router.Password.v1");
@@ -166,7 +168,9 @@ internal sealed class SettingsService(
         catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
             var reason = SmtpEmailSender.Describe(ex);
-            logger.LogWarning("TestEmailFailed ActorUserId={ActorUserId} Error={Error}", actorUserId, reason);
+            logger.LogInformation("TestEmailFailed ActorUserId={ActorUserId} Error={Error}", actorUserId, reason);
+            (activity ?? NullActivityLog.Instance).Write(new ActivityEvent(ActivityCategories.Application, "EmailDeliveryFailed",
+                ActivityOutcomes.Failure, Detail: $"email=Test error={ex.GetType().Name}", Level: ActivityLevel.Warning));
             return new SettingsResult(SettingsOutcome.Ok, Test: new TestEmailResultDto(false, user.Email!, reason));
         }
     }

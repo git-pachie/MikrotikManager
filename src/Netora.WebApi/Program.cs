@@ -3,6 +3,7 @@ using Microsoft.OpenApi.Models;
 using Netora.Application;
 using Netora.Infrastructure;
 using Netora.Infrastructure.Identity;
+using Netora.Logging;
 using Netora.WebApi.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -10,12 +11,15 @@ var builder = WebApplication.CreateBuilder(args);
 // Secrets come from user-secrets (Development) or appsettings.Secrets.json next to the app (any environment).
 builder.AddSecretsFile();
 
-// Structured (JSON) console logs outside Development. File logging is module 18.
+// Structured (JSON) console logs outside Development.
 if (!builder.Environment.IsDevelopment())
 {
     builder.Logging.ClearProviders();
     builder.Logging.AddJsonConsole();
 }
+
+// Daily log files netora-api-yyyy-MM-dd.txt (module 18). Folder: Logging:File:Path; levels: Logging:File:LogLevel.
+builder.AddNetoraFileLogging("netora-api", "logs/api");
 
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
@@ -31,7 +35,11 @@ builder.Services.AddDataProtection()
 builder.Services.AddNetoraAuthentication();
 
 // FluentValidation in Application owns field rules, so MVC must not add implicit [Required] on non-nullable strings.
-builder.Services.AddControllers(o => o.SuppressImplicitRequiredAttributeForNonNullableReferenceTypes = true)
+builder.Services.AddControllers(o =>
+    {
+        o.SuppressImplicitRequiredAttributeForNonNullableReferenceTypes = true;
+        o.Filters.Add<ValidationFailureLogFilter>();
+    })
     .UseApiResponseEnvelopeForValidation();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddProblemDetails();
@@ -69,7 +77,9 @@ if (app.Environment.IsDevelopment())
     await Netora.Infrastructure.Customers.SampleCustomerSeeder.SeedAsync(app.Services);
 }
 
+app.UseCorrelationId();
 app.UseExceptionHandler();
+app.UseUnhandledExceptionLogging();
 
 if (swaggerEnabled)
 {

@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Netora.Application.Logging;
 using Netora.Application.Pppoe;
 using Netora.Application.Router;
 using Netora.Domain.Approvals;
@@ -23,7 +24,8 @@ internal sealed class RouterProvisioner(
     NetoraDbContext db,
     IRouterClient router,
     IPppoePasswordProtector passwords,
-    ILogger<RouterProvisioner> logger) : IRouterProvisioner
+    ILogger<RouterProvisioner> logger,
+    IActivityLog? activity = null) : IRouterProvisioner
 {
     private static readonly SemaphoreSlim Gate = new(1, 1);
 
@@ -41,7 +43,9 @@ internal sealed class RouterProvisioner(
             var customer = await db.Customers.FirstAsync(c => c.Id == request.CustomerId, cancellationToken);
             var now = DateTimeOffset.UtcNow;
             string? error = null;
+            string? errorKind = null;
             string detail;
+            Exception? crash = null;
             try
             {
                 detail = await SendAsync(request, customer, cancellationToken);
@@ -49,12 +53,14 @@ internal sealed class RouterProvisioner(
             catch (RouterException ex)
             {
                 error = ex.Message;
+                errorKind = ex.Kind.ToString();
                 detail = ex.Message;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                logger.LogError(ex, "RouterProvisioningCrashed RequestId={RequestId}", requestId);
+                crash = ex;
                 error = "Unexpected error while talking to the router. See the API log.";
+                errorKind = "Unexpected";
                 detail = error;
             }
 
@@ -77,6 +83,7 @@ internal sealed class RouterProvisioner(
 
             logger.LogInformation("RouterProvisioning RequestId={RequestId} CustomerId={CustomerId} Operation={Operation} Status={Status} Attempt={Attempt} Mode={Mode}",
                 request.Id, customer.Id, request.Operation, request.ProvisioningStatus, request.ProvisioningAttempts, router.Mode);
+            Log(request, customer.Id, errorKind, crash);
             return new ProvisioningResult(request.ProvisioningStatus.ToString(), request.ProvisioningError, request.ProvisioningAttempts);
         }
         finally
@@ -138,6 +145,41 @@ internal sealed class RouterProvisioner(
             ApprovalOperation.TerminatePppoe => $"Secret {updated.Name} disabled (terminated, not deleted)",
             _ => $"Secret {updated.Name} updated",
         };
+    }
+
+    /// <summary>
+    /// File log (18.02): the provisioning result under Approvals, and on success the PPPoE account event. A failure
+    /// carries the error kind only (Unreachable, Unauthorized, ...), never the router's message or credentials.
+    /// </summary>
+    private void Log(ApprovalRequest request, int customerId, string? errorKind, Exception? crash)
+    {
+        var log = activity ?? NullActivityLog.Instance;
+        var detail = $"{request.Operation} {ActivityTargets.Customer(customerId)} attempt={request.ProvisioningAttempts} mode={router.Mode}";
+        if (errorKind is not null)
+        {
+            log.Write(new ActivityEvent(ActivityCategories.Approvals, "ProvisioningFailed", ActivityOutcomes.Failure,
+                ActivityTargets.Request(request.Id), $"{detail} error={errorKind}",
+                crash is null ? ActivityLevel.Warning : ActivityLevel.Error, Exception: crash));
+            if (crash is null)
+                log.Write(new ActivityEvent(ActivityCategories.MikroTik, "RouterError", ActivityOutcomes.Failure,
+                    ActivityTargets.Request(request.Id), $"kind={errorKind} mode={router.Mode}", ActivityLevel.Warning));
+            return;
+        }
+
+        log.Write(new ActivityEvent(ActivityCategories.Approvals, "ProvisioningSucceeded", ActivityOutcomes.Success,
+            ActivityTargets.Request(request.Id), detail));
+        var accountEvent = request.Operation switch
+        {
+            ApprovalOperation.CreatePppoe => "AccountCreated",
+            ApprovalOperation.DisablePppoe => "AccountSuspended",
+            ApprovalOperation.EnablePppoe => "AccountReactivated",
+            ApprovalOperation.ChangePlan => "PlanChanged",
+            ApprovalOperation.TerminatePppoe => "AccountTerminated",
+            _ => null,
+        };
+        if (accountEvent is not null)
+            log.Write(new ActivityEvent(ActivityCategories.Pppoe, accountEvent, ActivityOutcomes.Success,
+                ActivityTargets.Customer(customerId), $"{ApprovalRequest.DisplayId(request.Id)} mode={router.Mode}"));
     }
 
     private static string Truncate(string v, int max) => v.Length <= max ? v : v[..max];

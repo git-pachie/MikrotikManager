@@ -4,13 +4,14 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Netora.Application.Auth;
+using Netora.Application.Logging;
 using Netora.WebUI.Infrastructure;
 using Netora.WebUI.Models;
 using Netora.WebUI.Services;
 
 namespace Netora.WebUI.Controllers;
 
-public sealed class AccountController(INetoraApiClient apiClient, ILogger<AccountController> logger) : Controller
+public sealed class AccountController(INetoraApiClient apiClient, ILogger<AccountController> logger, IActivityLog activity) : Controller
 {
     public const string DisplayNameClaim = SessionSignIn.DisplayNameClaim;
 
@@ -34,6 +35,13 @@ public sealed class AccountController(INetoraApiClient apiClient, ILogger<Accoun
 
         var result = await apiClient.LoginAsync(new LoginRequest(model.UserName.Trim(), model.Password), cancellationToken);
         model.Password = string.Empty;
+
+        // The user name exactly as typed (cleaned and capped when written, 18.04); the password never.
+        activity.Write(result.Success && result.Data is not null
+            ? new ActivityEvent(ActivityCategories.Authentication, "LoginSucceeded", ActivityOutcomes.Success,
+                Actor: model.UserName)
+            : new ActivityEvent(ActivityCategories.Authentication, "LoginFailed", ActivityOutcomes.Failure,
+                Detail: result.Error?.Code ?? "no_response", Level: ActivityLevel.Warning, Actor: model.UserName));
 
         if (!result.Success || result.Data is null)
         {
@@ -65,6 +73,7 @@ public sealed class AccountController(INetoraApiClient apiClient, ILogger<Accoun
             logger.LogInformation("Logout called with a token the API no longer accepts");
         }
 
+        activity.Write(new ActivityEvent(ActivityCategories.Authentication, "Logout", ActivityOutcomes.Success));
         await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
         return RedirectToAction(nameof(Login));
     }

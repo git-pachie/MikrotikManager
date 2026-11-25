@@ -11,6 +11,7 @@ The WebUI never touches the database or the router. It calls the Web API, which 
 | `Netora.Domain` | Entities and domain rules |
 | `Netora.Application` | Business logic, DTOs, validation, abstractions |
 | `Netora.Infrastructure` | EF Core and SQL Server, Identity, email, file storage |
+| `Netora.Logging` | Daily log files, correlation IDs, the activity log used for business events |
 | `Netora.WebApi` | HTTP API (7225 https / 5132 http) |
 | `Netora.WebUI` | Razor MVC front end (7067 https / 5020 http) |
 | `Netora.Tests` | xUnit tests |
@@ -28,6 +29,7 @@ Specs, approved mockups and module prompts are in `Netora-MikroTik-Manager-V2-Pr
 | Users and Settings | `/users`, `/settings` (Managers), `/profile` (everyone) | Add, edit, enable/disable and password reset with a temporary password; router details (password encrypted) and email settings with a test email; own name, email, theme and password |
 
 | MikroTik | `/settings`, `/approvals/{id}`, `/customers/{id}`, `/pppoe/import` | Approved changes sent to the router with Retry, live status and Configuration Mismatch on the customer profile, Test Connection, Import. Uses a mock router until `Router:Mode` is `RouterOS` |
+| Logging | none (server files) | Daily text files `netora-api-yyyy-MM-dd.txt` and `netora-web-yyyy-MM-dd.txt`, see [Log files](#log-files) |
 
 The other sidebar pages are not built yet.
 
@@ -163,6 +165,14 @@ The router address, port, API user, password and optional certificate fingerprin
 
 The WebUI prints `Web API base URL: ...` at startup. If sign-in says "Sign-in is unavailable", check that line first.
 
+### Log files (both apps)
+
+| Setting | Default | Purpose |
+|---|---|---|
+| `Logging:File:Path` | `logs/api` (API), `logs/web` (WebUI) | Folder for the daily log files. Relative paths are under the app folder. Created when missing. Must be outside `wwwroot`, or the app does not start |
+| `Logging:File:LogLevel:Default` | `Warning` | Lowest level of ordinary log lines (framework warnings and errors) written to the file |
+| `Logging:File:LogLevel:Netora.Activity` | `Information` | Business events (sign-in, customers, approvals, router). Keep it at `Information` |
+
 ### Production
 
 No environment variables are needed.
@@ -170,15 +180,33 @@ No environment variables are needed.
 1. **Secrets:** create `appsettings.Secrets.json` in the API folder on the server (see [Secrets file](#secrets-file)).
 2. **Web API, non-secret:** in the API's `appsettings.Production.json`, set `Attachments:StoragePath` and `DataProtection:KeysPath` (folders outside the web root), plus the `Email` server settings if you want emails.
 3. **WebUI:** in the WebUI's `appsettings.Production.json`, set `Api:BaseUrl` to the API address.
+4. **Log folders (optional):** set `Logging:File:Path` in each app's `appsettings.Production.json` to choose where the log files go, and allow only administrators and the service account to read that folder. Without it, the files go to `logs/api` and `logs/web` inside each app folder.
 
 The apps refuse to start while a required setting is missing, and the error names the missing setting.
+
+## Log files
+
+Each app writes one plain-text file per day, named by the server's local date: `netora-api-2026-11-24.txt` in the API's log folder and `netora-web-2026-11-24.txt` in the WebUI's. The first event after midnight starts the next file. Old files are never deleted or rotated; remove them by hand when no longer needed. These files are separate from the Audit Trail, which will read the database (module 12). There is no log viewer in the app.
+
+One event per line:
+
+```text
+2026-11-24 09:42:17.123 +08:00 [INF] [Customers] CustomerCreated actor=manager01 role=Manager target=Customer:1042 outcome=Success ip=192.168.7.20 corr=8f3a1c
+```
+
+- **Fields, in order:** time with UTC offset, level (`INF`, `WRN`, `ERR`), category, event, `actor` (user name or `anonymous`), `role`, `target` (entity and ID), `outcome`, `ip`, `corr`, `detail`. Optional fields are left out when empty. Values with spaces are in quotes. An exception follows on indented lines.
+- **Correlation ID (`corr`):** the same value appears in the WebUI file, the API file and the `traceId` of API responses, so one action can be followed across both apps. The WebUI sends it to the API in the `X-Correlation-ID` header.
+- **API events:** LoginSucceeded, LoginFailed, LockoutTriggered, Logout, PasswordChanged; CustomerCreated, CustomerUpdated (changed field names), CustomerAccessDenied (Staff opening a Manager-only customer), attachments; PppoeUpdated, ImportStarted, ImportCompleted, AccountCreated, AccountSuspended, AccountReactivated, PlanChanged, AccountTerminated; RequestSubmitted, RequestApproved, RequestRejected, ProvisioningSucceeded, ProvisioningFailed, RetryAttempted; UserCreated, RoleChanged, UserDeactivated, UserReactivated and other user changes, SettingsUpdated; ConnectionTested, RouterError; UnhandledException, ValidationFailed (field names), AuthorizationDenied, EmailDeliveryFailed.
+- **WebUI events:** LoginSucceeded, LoginFailed, Logout and UnhandledException.
+- **Never written:** passwords, tokens, cookies, connection strings, router or SMTP credentials, request bodies, customer names, phone numbers, addresses, free-text reasons and notes. A failed login records the user name exactly as typed (control characters removed, at most 256 characters), so a password typed into the user name box would appear: keep the folder restricted.
+- **If the file cannot be written** (disk full, no permission), the request still completes and the problem is printed to the console.
 
 ## Approval emails
 
 - **New request:** every active Manager with an email address on their account is emailed. The requester is not.
 - **Decision:** the requester is emailed.
 - **Content:** request and customer IDs only, no customer names or contact details. Recipients are in BCC.
-- **Failures:** emails are sent in the background. A failed or unconfigured email is logged (`ApprovalEmailFailed`, `ApprovalEmailSkipped`) and never changes the approval.
+- **Failures:** emails are sent in the background. A failed or unconfigured email is logged on the console (`ApprovalEmailFailed`, `ApprovalEmailSkipped`) and never changes the approval. A failed send also writes `EmailDeliveryFailed` (error type only) to the log file.
 
 Managers set email addresses under User Management, and every user can set their own in My Profile (`/profile`). The **Settings** page can switch emails on or off and change the sender without editing `appsettings`; values saved there override `appsettings`. Its **Send Test Email to Me** button sends one email to your own address at once.
 
@@ -271,3 +299,4 @@ dotnet ef database update      --project src/Netora.Infrastructure --startup-pro
 | API stops with "Connection string ... is not configured" | The secret is missing on this machine. Check `dotnet user-secrets list --project src/Netora.WebApi`, or `appsettings.Secrets.json` in the API folder |
 | `https://<host>:7225/` returns 401 | Expected: the API has no page at `/` and requires sign-in. Use `/swagger` or `/api/v1/health` |
 | The WebUI cannot call the API over https | Run `dotnet dev-certs https --trust` once |
+| No log file appears | Check the console for `Netora file log: could not write to ...`, and that the app account may write to `Logging:File:Path` |

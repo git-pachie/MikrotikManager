@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Netora.Application\Netora.Application.csproj" />
+    <ProjectReference Include="..\Netora.Logging\Netora.Logging.csproj" />
   </ItemGroup>
 
   <ItemGroup>

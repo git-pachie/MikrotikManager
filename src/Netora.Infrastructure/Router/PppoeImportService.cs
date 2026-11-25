@@ -3,6 +3,7 @@ using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Netora.Application.Customers;
+using Netora.Application.Logging;
 using Netora.Application.Pppoe;
 using Netora.Application.Router;
 using Netora.Domain.Customers;
@@ -19,14 +20,17 @@ internal sealed class PppoeImportService(
     NetoraDbContext db,
     IRouterClient router,
     IPppoePasswordProtector passwords,
-    ILogger<PppoeImportService> logger) : IPppoeImportService
+    ILogger<PppoeImportService> logger,
+    IActivityLog? activity = null) : IPppoeImportService
 {
+    private IActivityLog Log => activity ?? NullActivityLog.Instance;
+
     private static readonly Regex UserNamePattern = new(CustomerFieldsValidator<CreateCustomerRequest>.PppoeUsernamePattern);
     private static readonly int[] UniqueViolation = [2601, 2627];
 
     public async Task<ImportScanDto> ScanAsync(CancellationToken cancellationToken)
     {
-        var secrets = await router.ListSecretsAsync(cancellationToken);
+        var secrets = await ListSecretsAsync("ImportScan", cancellationToken);
         var known = await KnownAsync(cancellationToken);
         var items = secrets.OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase).Select(s => Classify(s, known)).ToList();
         return new ImportScanDto(router.Mode, items, items.Count(i => i.State == "New"));
@@ -38,8 +42,11 @@ internal sealed class PppoeImportService(
         var messages = new List<string>();
         if (wanted.Count == 0) return new ImportResultDto(0, 0, ["Select at least one account to import."]);
 
+        Log.Write(new ActivityEvent(ActivityCategories.Pppoe, "ImportStarted", ActivityOutcomes.Pending,
+            Detail: $"selected={wanted.Count} mode={router.Mode}", Actor: actorUserName));
+
         // Scan again at confirmation time, so the import uses the router's current values and current SQL Server records.
-        var secrets = await router.ListSecretsAsync(cancellationToken);
+        var secrets = await ListSecretsAsync("Import", cancellationToken);
         var known = await KnownAsync(cancellationToken);
         int imported = 0, skipped = 0;
 
@@ -100,7 +107,27 @@ internal sealed class PppoeImportService(
         }
 
         logger.LogInformation("PppoeImport Imported={Imported} Skipped={Skipped} ActorUserId={ActorUserId} Mode={Mode}", imported, skipped, actorUserId, router.Mode);
+        Log.Write(new ActivityEvent(ActivityCategories.Pppoe, "ImportCompleted", ActivityOutcomes.Success,
+            Detail: $"imported={imported} skipped={skipped} mode={router.Mode}", Actor: actorUserName));
         return new ImportResultDto(imported, skipped, messages);
+    }
+
+    /// <summary>Router failures are logged with the error kind only, then passed on to the caller.</summary>
+    private async Task<IReadOnlyList<RouterSecret>> ListSecretsAsync(string step, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await router.ListSecretsAsync(cancellationToken);
+        }
+        catch (RouterException ex)
+        {
+            Log.Write(new ActivityEvent(ActivityCategories.MikroTik, "RouterError", ActivityOutcomes.Failure,
+                Detail: $"step={step} kind={ex.Kind} mode={router.Mode}", Level: ActivityLevel.Warning));
+            if (step == "Import")
+                Log.Write(new ActivityEvent(ActivityCategories.Pppoe, "ImportCompleted", ActivityOutcomes.Failure,
+                    Detail: $"error={ex.Kind} mode={router.Mode}", Level: ActivityLevel.Warning));
+            throw;
+        }
     }
 
     private sealed record Known(HashSet<string> Names, Dictionary<string, int> ByName, HashSet<string> SecretIds);

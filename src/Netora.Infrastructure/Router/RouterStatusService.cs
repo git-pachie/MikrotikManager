@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Netora.Application.Logging;
 using Netora.Application.Router;
 using Netora.Domain.Customers;
 using Netora.Infrastructure.Persistence;
@@ -9,7 +10,7 @@ namespace Netora.Infrastructure.Router;
 /// On-demand router check for one customer (09.03): run when the customer profile is opened or refreshed, never on a
 /// schedule. Compares SQL Server with the router and reports differences (09.04) without changing either side.
 /// </summary>
-internal sealed class RouterStatusService(NetoraDbContext db, IRouterClient router) : IRouterStatusService
+internal sealed class RouterStatusService(NetoraDbContext db, IRouterClient router, IActivityLog? activity = null) : IRouterStatusService
 {
     public async Task<RouterStatusDto?> CheckAsync(int customerId, bool viewerIsManager, CancellationToken cancellationToken)
     {
@@ -29,6 +30,9 @@ internal sealed class RouterStatusService(NetoraDbContext db, IRouterClient rout
         }
         catch (RouterException ex)
         {
+            (activity ?? NullActivityLog.Instance).Write(new ActivityEvent(ActivityCategories.MikroTik, "RouterError",
+                ActivityOutcomes.Failure, ActivityTargets.Customer(c.Id), $"step=StatusCheck kind={ex.Kind} mode={router.Mode}",
+                ActivityLevel.Warning));
             return new RouterStatusDto(router.Mode, false, ex.Message, now, false, expected, null, false, null, null, null, c.PlanName, []);
         }
     }

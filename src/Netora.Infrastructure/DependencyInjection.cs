@@ -2,8 +2,10 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Netora.Application.Abstractions;
 using Netora.Application.Auth;
+using Netora.Application.Logging;
 using Netora.Infrastructure.Identity;
 using Netora.Infrastructure.Persistence;
 
@@ -24,9 +26,14 @@ public static class DependencyInjection
                 "(see appsettings.Secrets.example.json). Never commit it.");
         }
 
-        services.AddDbContext<NetoraDbContext>(options =>
+        // File logging (module 18). The host replaces this with the real log (Netora.Logging); tools get nothing.
+        services.TryAddSingleton<IActivityLog>(NullActivityLog.Instance);
+        services.AddScoped<ActivityLogInterceptor>();
+
+        services.AddDbContext<NetoraDbContext>((sp, options) =>
             options.UseSqlServer(connectionString, sql =>
-                sql.MigrationsAssembly(typeof(NetoraDbContext).Assembly.FullName)));
+                    sql.MigrationsAssembly(typeof(NetoraDbContext).Assembly.FullName))
+                .AddInterceptors(sp.GetRequiredService<ActivityLogInterceptor>()));
 
         services.AddScoped<IDatabaseProbe, DatabaseProbe>();
 

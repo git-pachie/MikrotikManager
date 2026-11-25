@@ -27,6 +27,7 @@
     <ProjectReference Include="..\..\src\Netora.Application\Netora.Application.csproj" />
     <ProjectReference Include="..\..\src\Netora.Infrastructure\Netora.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\Netora.WebApi\Netora.WebApi.csproj" />
+    <ProjectReference Include="..\..\src\Netora.Logging\Netora.Logging.csproj" />
   </ItemGroup>
 
 </Project>

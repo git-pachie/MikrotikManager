@@ -2,10 +2,14 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Netora.Logging;
 using Netora.WebUI.Infrastructure;
 using Netora.WebUI.Services;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Daily log files netora-web-yyyy-MM-dd.txt (module 18): this app's own events only (sign-in, sign-out, UI errors).
+builder.AddNetoraFileLogging("netora-web", "logs/web");
 
 // Cookies are Secure always, except in Development where http and https are both served.
 var cookieSecurePolicy = builder.Environment.IsDevelopment()
@@ -66,12 +70,14 @@ var app = builder.Build();
 
 app.Logger.LogInformation("Web API base URL: {ApiBaseUrl}", apiBaseUri);
 
+app.UseCorrelationId();
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/error");
     // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
     app.UseHsts();
 }
+app.UseUnhandledExceptionLogging();
 
 // In Development both http and https are served side by side, so no forced redirect.
 if (!app.Environment.IsDevelopment())

@@ -48,11 +48,15 @@ public sealed class TestDb : IDisposable
 {
     private readonly DbContextOptions<NetoraDbContext> options;
 
-    public TestDb()
+    public TestDb() : this([]) { }
+
+    /// <param name="interceptors">For example the file log interceptor (module 18).</param>
+    public TestDb(params Microsoft.EntityFrameworkCore.Diagnostics.IInterceptor[] interceptors)
     {
         options = new DbContextOptionsBuilder<NetoraDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
             .ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning))
+            .AddInterceptors(interceptors)
             .Options;
     }
 

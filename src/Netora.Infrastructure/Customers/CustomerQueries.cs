@@ -112,6 +112,9 @@ internal sealed class CustomerQueries(NetoraDbContext db, IOptions<AttachmentOpt
             attachmentOptions.Value.MaxFileSizeBytes);
     }
 
+    public Task<bool> IsManagerOnlyAsync(int id, CancellationToken cancellationToken)
+        => db.Customers.AsNoTracking().AnyAsync(c => c.Id == id && c.IsManagerOnly, cancellationToken);
+
     /// <summary>
     /// Sorts by a whitelisted column. The Id tie-breaker keeps paging stable when many rows share a value.
     /// Default (no or unknown column) is the original order: by ID, which is the order of creation.

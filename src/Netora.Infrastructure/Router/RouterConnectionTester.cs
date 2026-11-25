@@ -2,6 +2,7 @@ using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Netora.Application.Abstractions;
+using Netora.Application.Logging;
 using Netora.Application.Router;
 using Netora.Domain.Security;
 using Netora.Domain.Settings;
@@ -14,13 +15,15 @@ internal sealed class RouterConnectionTester(
     NetoraDbContext db,
     IRouterClient router,
     ISecurityEventWriter events,
-    ILogger<RouterConnectionTester> logger) : IRouterConnectionTester
+    ILogger<RouterConnectionTester> logger,
+    IActivityLog? activity = null) : IRouterConnectionTester
 {
     public async Task<RouterTestResultDto> TestAsync(string actorUserId, CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.UtcNow;
         bool ok;
         string message;
+        string? errorKind = null;
         try
         {
             var id = await router.GetIdentityAsync(cancellationToken);
@@ -31,7 +34,14 @@ internal sealed class RouterConnectionTester(
         {
             ok = false;
             message = ex.Message;
+            errorKind = ex.Kind.ToString();
         }
+
+        // File log: result and error kind only; the router's message may name hosts and is kept on the Settings page.
+        (activity ?? NullActivityLog.Instance).Write(new ActivityEvent(ActivityCategories.MikroTik, "ConnectionTested",
+            ok ? ActivityOutcomes.Success : ActivityOutcomes.Failure,
+            Detail: ok ? $"mode={router.Mode}" : $"kind={errorKind} mode={router.Mode}",
+            Level: ok ? ActivityLevel.Information : ActivityLevel.Warning));
 
         await SetAsync(AppSettingKeys.RouterLastTestAtUtc, now.ToString("O", CultureInfo.InvariantCulture), actorUserId, now, cancellationToken);
         await SetAsync(AppSettingKeys.RouterLastTestOk, ok ? "true" : "false", actorUserId, now, cancellationToken);

@@ -14,4 +14,10 @@ public interface ICustomerQueries
     /// </summary>
     /// <param name="viewerIsManager">From the server-side role. Controls visibility and the IsEditable flag.</param>
     Task<CustomerDetailDto?> GetDetailAsync(int id, bool viewerIsManager, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// True when the customer exists and is Manager-only. For the server log only (CustomerAccessDenied, 18.02);
+    /// never use it to change what Staff see.
+    /// </summary>
+    Task<bool> IsManagerOnlyAsync(int id, CancellationToken cancellationToken);
 }

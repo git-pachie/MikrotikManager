@@ -2,13 +2,14 @@ using Microsoft.AspNetCore.Mvc;
 using Netora.Application.Auth;
 using Netora.Application.Common;
 using Netora.Application.Customers;
+using Netora.Application.Logging;
 using Netora.Infrastructure.Identity;
 
 namespace Netora.WebApi.Controllers;
 
 [ApiController]
 [Route("api/v1/customers")]
-public sealed class CustomersController(ICustomerQueries customers, ICustomerCommands commands) : ControllerBase
+public sealed class CustomersController(ICustomerQueries customers, ICustomerCommands commands, IActivityLog activity) : ControllerBase
 {
     /// <summary>
     /// Paged customer list with summary counts. Manager-only customers are excluded for Staff from the rows,
@@ -79,9 +80,15 @@ public sealed class CustomersController(ICustomerQueries customers, ICustomerCom
     {
         var detail = await customers.GetDetailAsync(id, viewerIsManager: IsManager, cancellationToken);
         var traceId = HttpContext.TraceIdentifier;
-        return detail is null
-            ? NotFound(ApiResponse<CustomerDetailDto>.Fail("not_found", "Customer not found.", traceId))
-            : Ok(ApiResponse<CustomerDetailDto>.Ok(detail, traceId));
+        if (detail is null)
+        {
+            // Staff still get a plain 404; only the server log records that the Manager-only rule applied (18.02).
+            if (!IsManager && await customers.IsManagerOnlyAsync(id, cancellationToken))
+                activity.Write(new ActivityEvent(ActivityCategories.Customers, "CustomerAccessDenied", ActivityOutcomes.Denied,
+                    ActivityTargets.Customer(id), "ManagerOnly", ActivityLevel.Warning));
+            return NotFound(ApiResponse<CustomerDetailDto>.Fail("not_found", "Customer not found.", traceId));
+        }
+        return Ok(ApiResponse<CustomerDetailDto>.Ok(detail, traceId));
     }
 
     /// <summary>

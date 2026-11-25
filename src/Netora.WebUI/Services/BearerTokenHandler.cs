@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using Microsoft.AspNetCore.Authentication;
+using Netora.Logging;
 
 namespace Netora.WebUI.Services;
 
@@ -21,6 +22,10 @@ public sealed class BearerTokenHandler(IHttpContextAccessor httpContextAccessor)
         var token = httpContext is null ? null : await httpContext.GetTokenAsync(AccessTokenName);
         if (!string.IsNullOrEmpty(token))
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        // Same correlation ID in the WebUI and API log files, so one action can be followed across both (18.03).
+        if (Correlation.Get(httpContext) is { } correlationId)
+            request.Headers.TryAddWithoutValidation(Correlation.HeaderName, correlationId);
 
         var response = await base.SendAsync(request, cancellationToken);
 
