@@ -69,6 +69,11 @@ public static class DependencyInjection
         services.AddSingleton<Approvals.ApprovalEmailNotifier>();
         services.AddSingleton<Netora.Application.Approvals.IApprovalNotifier>(sp => sp.GetRequiredService<Approvals.ApprovalEmailNotifier>());
         services.AddHostedService<Approvals.ApprovalEmailDispatcher>();
+        services.AddScoped<Approvals.IEmailSettingsProvider, Approvals.EmailSettingsProvider>();
+
+        services.AddScoped<Netora.Application.Users.IUserAdminService, UserAdminService>();
+        services.AddScoped<Netora.Application.Users.IProfileService, ProfileService>();
+        services.AddScoped<Netora.Application.Settings.ISettingsService, Settings.SettingsService>();
         return services;
     }
 }

@@ -52,6 +52,12 @@ public sealed class SmtpOptions
 
     public int TimeoutSeconds { get; set; } = 30;
 
+    /// <summary>
+    /// Check whether the server certificate was revoked (default true). Set false only on a machine where antivirus
+    /// email scanning replaces the certificate (for example AVG Mail Shield); trust and host name are still checked.
+    /// </summary>
+    public bool CheckCertificateRevocation { get; set; } = true;
+
     public SecureSocketOptions SocketOptions => !UseSsl
         ? SecureSocketOptions.None
         : Port == 465 ? SecureSocketOptions.SslOnConnect : SecureSocketOptions.StartTls;

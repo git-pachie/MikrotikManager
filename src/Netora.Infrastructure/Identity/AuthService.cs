@@ -63,6 +63,9 @@ internal sealed class AuthService(
             return new LoginResult(LoginOutcome.InvalidCredentials, null);
         }
 
+        user.LastSignInAtUtc = DateTimeOffset.UtcNow;
+        await userManager.UpdateAsync(user);
+
         var (token, expires) = tokenService.Create(user, role);
         await securityEvents.WriteAsync(SecurityEventTypes.LoginSucceeded, true, user.Id,
             user.UserName, ipAddress, null, cancellationToken);
@@ -91,7 +94,8 @@ internal sealed class AuthService(
     private Task Fail(string? userId, string typedUserName, string? ip, string reason, CancellationToken ct)
         => securityEvents.WriteAsync(SecurityEventTypes.LoginFailed, false, userId, typedUserName, ip, reason, ct);
 
-    private static CurrentUserDto ToDto(ApplicationUser user, string role)
+    internal static CurrentUserDto ToDto(ApplicationUser user, string role)
         => new(user.Id, user.UserName ?? string.Empty,
-            string.IsNullOrWhiteSpace(user.DisplayName) ? user.UserName ?? string.Empty : user.DisplayName, role);
+            string.IsNullOrWhiteSpace(user.DisplayName) ? user.UserName ?? string.Empty : user.DisplayName, role,
+            user.MustChangePassword, user.ThemePreference, user.Email);
 }

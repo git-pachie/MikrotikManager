@@ -1,5 +1,6 @@
-﻿<!doctype html>
-<html lang="en" data-bs-theme="light">
+<!doctype html>
+@{ var userTheme = User.FindFirst(Netora.WebUI.Infrastructure.SessionSignIn.ThemeClaim)?.Value; }
+<html lang="en" data-bs-theme="@(userTheme ?? "light")" data-user-theme="@userTheme">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">

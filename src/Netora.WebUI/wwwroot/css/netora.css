@@ -80,3 +80,5 @@ a.action-btn,a.text-action{text-decoration:none}
 .pager a.pager-link.active{background:var(--blue);color:#fff;border-color:var(--blue)}
 .approval-head{flex-wrap:wrap}
 @media(max-width:800px){.approval-filter{width:100%}.approval-filter input{flex:1 1 160px;width:auto}}
+/* Implementation addition (module 13): the top bar profile block links to My Profile; looks the same as the mockup. */
+a.profile{color:inherit;text-decoration:none}a.profile:hover .profile-name{color:var(--blue)}

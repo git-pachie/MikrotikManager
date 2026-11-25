@@ -25,6 +25,7 @@ Specs, approved mockups and module prompts are in `Netora-MikroTik-Manager-V2-Pr
 | Customers | `/customers`, `/customers/{id}`, `/customers/new`, `/customers/{id}/edit` | Search, filters, sorting, paging, details, add/edit, attachments (JPG, PNG, PDF up to 10 MB). Manager-only customers are hidden from Staff, including in counts |
 | PPPoE | `/pppoe`, `/pppoe/{id}` | Accounts list and edit, encrypted password. Import is layout only |
 | Approvals | `/approvals`, `/approvals/{id}` | Create, Disable, Enable, Change Plan and Terminate requests; only Managers decide; approval emails |
+| Users and Settings | `/users`, `/settings` (Managers), `/profile` (everyone) | Add, edit, enable/disable and password reset with a temporary password; router details (password encrypted) and email settings with a test email; own name, email, theme and password |
 
 Not connected yet: the MikroTik router. Approved changes are saved in the database and shown as "Not sent to router". The other sidebar pages are not built yet.
 
@@ -139,6 +140,7 @@ Non-secret settings live in `appsettings.json`, with overrides in `appsettings.D
 | `Email:Smtp:UseSsl` | `true` | `true`: always encrypted. Port 465 uses SSL from the start, any other port (587) uses STARTTLS, and sending fails if the server cannot encrypt. `false`: no encryption, only for an internal mail relay |
 | `Email:Smtp:UserName`, `Email:Smtp:Password` | none | **Secret.** SMTP login |
 | `Email:Smtp:TimeoutSeconds` | `30` | SMTP timeout |
+| `Email:Smtp:CheckCertificateRevocation` | `true` | Set `false` only on a PC where antivirus email scanning (for example AVG Mail Shield) replaces the server certificate; trust and host name are still checked |
 | `Email:From`, `Email:FromName` | empty, `Netora` | Sender of approval emails |
 | `Email:AppBaseUrl` | empty | Optional public WebUI address for links in emails, for example `https://netora.example/` |
 
@@ -169,7 +171,7 @@ The apps refuse to start while a required setting is missing, and the error name
 - **Content:** request and customer IDs only, no customer names or contact details. Recipients are in BCC.
 - **Failures:** emails are sent in the background. A failed or unconfigured email is logged (`ApprovalEmailFailed`, `ApprovalEmailSkipped`) and never changes the approval.
 
-User accounts get email addresses through User Management (module 13). Until then there are no recipients, so nothing is sent.
+Managers set email addresses under User Management, and every user can set their own in My Profile (`/profile`). The **Settings** page can switch emails on or off and change the sender without editing `appsettings`; values saved there override `appsettings`. Its **Send Test Email to Me** button sends one email to your own address at once.
 
 ### Turning emails on with Gmail
 

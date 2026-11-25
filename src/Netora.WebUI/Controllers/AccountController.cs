@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Netora.Application.Auth;
+using Netora.WebUI.Infrastructure;
 using Netora.WebUI.Models;
 using Netora.WebUI.Services;
 
@@ -11,7 +12,7 @@ namespace Netora.WebUI.Controllers;
 
 public sealed class AccountController(INetoraApiClient apiClient, ILogger<AccountController> logger) : Controller
 {
-    public const string DisplayNameClaim = "display_name";
+    public const string DisplayNameClaim = SessionSignIn.DisplayNameClaim;
 
     [AllowAnonymous]
     [HttpGet("/login")]
@@ -46,27 +47,8 @@ public sealed class AccountController(INetoraApiClient apiClient, ILogger<Accoun
             return View(model);
         }
 
-        var user = result.Data.User;
-        var identity = new ClaimsIdentity(
-        [
-            new Claim(ClaimTypes.NameIdentifier, user.Id),
-            new Claim(ClaimTypes.Name, user.UserName),
-            new Claim(ClaimTypes.Role, user.Role),
-            new Claim(DisplayNameClaim, user.DisplayName),
-        ], CookieAuthenticationDefaults.AuthenticationScheme);
-
-        // The cookie lives exactly as long as the API token: a session cookie whose ticket expires with the token.
-        var properties = new AuthenticationProperties
-        {
-            IsPersistent = false,
-            AllowRefresh = false,
-            ExpiresUtc = result.Data.ExpiresAtUtc,
-        };
-        properties.StoreTokens([new AuthenticationToken { Name = BearerTokenHandler.AccessTokenName, Value = result.Data.AccessToken }]);
-
-        await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-        await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity), properties);
-
+        await SessionSignIn.SignInAsync(HttpContext, result.Data);
+        if (result.Data.User.MustChangePassword) return Redirect("/profile/password");
         return LocalRedirect(SafeReturnUrl(model.ReturnUrl));
     }
 

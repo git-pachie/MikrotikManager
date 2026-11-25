@@ -12,6 +12,13 @@
       root.setAttribute('data-bs-theme', b.dataset.theme);
       try { localStorage.setItem('netora-theme', b.dataset.theme); } catch (e) { }
       sync();
+      // Signed in: also save it to the account, so it follows the user to other browsers.
+      var form = document.getElementById('themeForm');
+      if (form && window.fetch) {
+        var data = new FormData(form);
+        data.append('theme', b.dataset.theme);
+        fetch(form.action, { method: 'POST', body: data, credentials: 'same-origin' }).catch(function () { });
+      }
     });
   });
   sync();

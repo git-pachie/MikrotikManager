@@ -17,6 +17,7 @@ builder.Services.AddControllersWithViews(options =>
     // CSRF: every unsafe request (POST, PUT, DELETE) must carry a valid antiforgery token.
     options.Filters.Add(new AutoValidateAntiforgeryTokenAttribute());
     options.Filters.Add<ApiUnauthorizedExceptionFilter>();
+    options.Filters.Add<PasswordChangeRequiredFilter>();
 });
 
 builder.Services.AddAntiforgery(options =>

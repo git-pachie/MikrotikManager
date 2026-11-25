@@ -13,7 +13,10 @@ public sealed class LoginRequestValidator : AbstractValidator<LoginRequest>
     }
 }
 
-public sealed record CurrentUserDto(string Id, string UserName, string DisplayName, string Role);
+/// <param name="MustChangePassword">The user must pick a new password before doing anything else.</param>
+/// <param name="Theme">"light", "dark" or null (no saved preference).</param>
+public sealed record CurrentUserDto(string Id, string UserName, string DisplayName, string Role,
+    bool MustChangePassword = false, string? Theme = null, string? Email = null);
 
 public sealed record LoginResultDto(string AccessToken, DateTimeOffset ExpiresAtUtc, CurrentUserDto User);
 

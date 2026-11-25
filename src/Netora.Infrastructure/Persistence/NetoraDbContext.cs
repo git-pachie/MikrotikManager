@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Netora.Domain.Approvals;
 using Netora.Domain.Customers;
 using Netora.Domain.Security;
+using Netora.Domain.Settings;
 using Netora.Infrastructure.Identity;
 
 namespace Netora.Infrastructure.Persistence;
@@ -15,6 +16,7 @@ public sealed class NetoraDbContext(DbContextOptions<NetoraDbContext> options)
     public DbSet<CustomerActivity> CustomerActivities => Set<CustomerActivity>();
     public DbSet<CustomerAttachment> CustomerAttachments => Set<CustomerAttachment>();
     public DbSet<ApprovalRequest> ApprovalRequests => Set<ApprovalRequest>();
+    public DbSet<AppSetting> AppSettings => Set<AppSetting>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -24,6 +26,7 @@ public sealed class NetoraDbContext(DbContextOptions<NetoraDbContext> options)
         modelBuilder.Entity<ApplicationUser>(b =>
         {
             b.Property(u => u.DisplayName).HasMaxLength(200);
+            b.Property(u => u.ThemePreference).HasMaxLength(10);
         });
     }
 }

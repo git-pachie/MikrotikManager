@@ -6,16 +6,17 @@
             <button type="button" data-theme="dark" aria-label="Dark mode"><svg class="icon"><use href="#moon" /></svg></button>
         </div>
         <button class="notification" aria-label="Notifications"><svg class="icon" style="width:26px;height:26px"><use href="#bell" /></svg></button>
-        <div class="profile">
+        <a class="profile" href="/profile" title="My Profile">
             <div class="avatar" aria-hidden="true">👤</div>
             <div>
                 <div class="profile-name">@(User.Identity?.IsAuthenticated == true ? (User.FindFirst("display_name")?.Value ?? User.Identity.Name) : "Not signed in")</div>
                 <div class="profile-role">@(User.IsInRole("Manager") ? "Manager" : User.IsInRole("Staff") ? "Staff" : "")</div>
             </div>
             <svg class="icon" style="width:14px"><use href="#chevron" /></svg>
-        </div>
+        </a>
         @if (User.Identity?.IsAuthenticated == true)
         {
+            <form id="themeForm" method="post" action="/profile/theme" hidden>@Html.AntiForgeryToken()</form>
             <form asp-controller="Account" asp-action="Logout" method="post" class="signout-form">
                 <button type="submit" class="btn btn-outline">Sign out</button>
             </form>

@@ -27,4 +27,13 @@ public static class SecurityEventTypes
     public const string LockoutTriggered = "LockoutTriggered";
     public const string Logout = "Logout";
     public const string ManagerBootstrapped = "ManagerBootstrapped";
+    public const string UserCreated = "UserCreated";
+    public const string UserUpdated = "UserUpdated";
+    public const string RoleChanged = "RoleChanged";
+    public const string UserDeactivated = "UserDeactivated";
+    public const string UserReactivated = "UserReactivated";
+    public const string PasswordResetByManager = "PasswordResetByManager";
+    public const string PasswordChanged = "PasswordChanged";
+    public const string ProfileUpdated = "ProfileUpdated";
+    public const string SettingsUpdated = "SettingsUpdated";
 }

@@ -77,5 +77,11 @@ public static class AuthenticationSetup
             identity.RemoveClaim(existing);
         foreach (var role in roles)
             identity.AddClaim(new Claim(NetoraClaimTypes.Role, role));
+
+        // Read from the database, like the roles, so a reset takes effect at once (see PasswordChangeRequiredMiddleware).
+        foreach (var existing in identity.FindAll(PasswordChangeRequiredMiddleware.ClaimType).ToList())
+            identity.RemoveClaim(existing);
+        if (user.MustChangePassword)
+            identity.AddClaim(new Claim(PasswordChangeRequiredMiddleware.ClaimType, "true"));
     }
 }

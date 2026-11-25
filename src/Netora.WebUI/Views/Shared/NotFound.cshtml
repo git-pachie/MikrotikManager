@@ -1,14 +1,25 @@
 @{
+    var title = ViewData["NotFoundTitle"] as string ?? "Customer not found";
+    var isUser = title.StartsWith("User", StringComparison.Ordinal);
     ViewData["Title"] = "Not found";
-    ViewData["Nav"] = "customers";
+    ViewData["Nav"] = isUser ? "users" : "customers";
 }
 <div class="heading">
     <div class="heading-title">
         <svg class="icon"><use href="#users" /></svg>
         <div>
-            <h1>Customer not found</h1>
-            <p>This customer does not exist, or you do not have access to it.</p>
+            <h1>@title</h1>
+            <p>@(isUser ? "This user does not exist." : "This customer does not exist, or you do not have access to it.")</p>
         </div>
     </div>
-    <div class="heading-actions"><a class="btn btn-outline" href="/customers">Back to customers</a></div>
+    <div class="heading-actions">
+        @if (isUser)
+        {
+            <a class="btn btn-outline" href="/users">Back to users</a>
+        }
+        else
+        {
+            <a class="btn btn-outline" href="/customers">Back to customers</a>
+        }
+    </div>
 </div>

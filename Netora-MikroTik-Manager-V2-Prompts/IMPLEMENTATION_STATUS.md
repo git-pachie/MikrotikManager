@@ -17,8 +17,8 @@ All 18 HTML designs approved as visual references; see the per-page status below
 | ONU History | Yes | No | No | No | No | Not started |
 | Diagnostics | Yes | No | No | No | No | Not started |
 | Audit Trail | Yes | No | No | No | No | Not started |
-| User Management | Yes | No | No | No | No | Not started |
-| Settings | Yes | No | No | No | No | Not started |
+| User Management | Yes | Yes (`/users`, `/users/new`, `/users/{id}/edit`) | Yes (`/api/v1/users`) | Yes (Staff: page and API 403, sidebar hidden) | Screenshot 1440px light compared with `users.html` | Done (2026-11-25). See Module 13 section. |
+| Settings | Yes | Yes (`/settings`) | Yes (`/api/v1/settings`) | Yes (Managers only) | Screenshot 1440px light compared with `settings.html` | Done except connecting to the router (module 09). See Module 13 section. |
 | Reports | Yes | No | No | No | No | Not started |
 | Backups | Yes | No | No | No | No | Not started |
 | Notifications | Yes | No | No | No | No | Not started |
@@ -83,3 +83,15 @@ User decisions applied (2026-11-24): new customers start as Pending Approval and
 | Migration | Applied to dev DB | `ApprovalsModule`: 7 request columns; existing approved requests marked `NotSent`; before/after filled for old disable/enable rows; creation requests added for the 4 customers already waiting (IDs 25 to 28). Down removes requests of the new kinds. |
 | Tests | Added | 18 new automated tests (90 total, all passing). Live API checks 29/29 and WebUI checks 22/22 as Manager and as a temporary Staff account (removed afterwards with its test customers). |
 | Not done | Open | Router provisioning and retry (09); in-app notifications page (16); sidebar pending count (no badge in the mockup). |
+
+## Module 13 Settings and Users (2026-11-25)
+| Item | Status | Evidence / remaining issues |
+|---|---|---|
+| 13.01 User Management | Done | Managers add users (user name, display name, email, role, temporary password), edit name, email, role and active state, and reset passwords. A temporary password must be changed at the next sign-in: the WebUI sends every page to `/profile/password`, and the API answers 403 `password_change_required` except for profile, auth and health. Guards: no change of your own role or active state, no self reset (use My Profile), at least one active Manager stays, stale forms return 409. Role change, deactivation and reset rotate the security stamp, so open sessions end at once (verified live). Reset also unlocks the account. Security events: UserCreated, UserUpdated, RoleChanged, UserDeactivated, UserReactivated, PasswordResetByManager, PasswordChanged, ProfileUpdated, SettingsUpdated. Last sign-in time recorded. |
+| My Profile (`/profile`) | Done | No approved mockup; shared form styles. Every user edits display name and email (unique across users) and changes their password (returns a new token so the session continues; wrong current passwords count towards lockout). The top bar profile block links here. |
+| 13.02 Settings | Done except router connection | MikroTik connection: name, address, HTTPS port, API user name and password (encrypted with Data Protection, write-only). Test Connection is disabled until module 09. Notifications: on/off, sender, sender name and link address are stored in the new `AppSettings` table and override appsettings; SMTP server and login stay in configuration and secrets and are shown read-only. "Send Test Email to Me" sends at once and shows the result. Initial Configuration checklist (Managers, bootstrap secret removal, Manager emails, approval emails, router details). |
+| Theme preference | Done | The top bar switch saves the theme to the account (`ThemePreference`), and the layout renders it server-side so it follows the user to other browsers. |
+| AVG / revocation | Setting added | `Email:Smtp:CheckCertificateRevocation` (default `true`). With it on, the test email on the dev PC failed with an explanation naming AVG; with it off for that run only, Netora sent the test email to Gmail (`Sent`). The committed default stays `true`. |
+| Migration | Applied to dev DB | `UsersAndSettings`: `MustChangePassword`, `ThemePreference`, `LastSignInAtUtc` on users, and the `AppSettings` table. |
+| Tests | Added | 18 new automated tests (116 total, all passing). Live checks 31/31 as Manager and as a temporary Staff account, plus the real test email; temporary users and saved settings removed afterwards. |
+| Not done | Open | Router connection test (09). Email-based password reset links (not needed: Managers set temporary passwords). |

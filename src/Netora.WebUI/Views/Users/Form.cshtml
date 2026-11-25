@@ -1,0 +1,114 @@
+@model UserFormViewModel
+@{
+    ViewData["Title"] = Model.IsEdit ? "Edit User" : "Add User";
+    ViewData["Nav"] = "users";
+    var formError = ViewData.ModelState[string.Empty]?.Errors.FirstOrDefault()?.ErrorMessage;
+    var action = Model.IsEdit ? $"/users/{Uri.EscapeDataString(Model.Id!)}/edit" : "/users/new";
+}
+<div class="detail-breadcrumb"><a href="/users">User Management</a><span> / </span><strong>@(Model.IsEdit ? Model.UserName : "Add User")</strong></div>
+<div class="heading">
+    <div class="heading-title">
+        <svg class="icon"><use href="#users" /></svg>
+        <div>
+            <h1>@(Model.IsEdit ? "Edit User" : "Add User")</h1>
+            <p>@(Model.IsEdit ? $"{Model.UserName} • Last sign-in {UserLabels.When(Model.LastSignInAtUtc)}" : "Create an account with a temporary password.")</p>
+        </div>
+    </div>
+    <div class="heading-actions"><a class="btn btn-outline" href="/users">Back to users</a></div>
+</div>
+@if (TempData[Netora.WebUI.Controllers.CustomersController.ToastKey] is string toast)
+{
+    <div class="form-success" role="status">@toast</div>
+}
+@if (TempData[Netora.WebUI.Controllers.CustomersController.ErrorKey] is string toastError)
+{
+    <div class="form-alert" role="alert">@toastError</div>
+}
+@if (formError is not null)
+{
+    <div class="form-alert" role="alert">@formError</div>
+}
+
+<form method="post" action="@action" novalidate>
+    @Html.AntiForgeryToken()
+    <input asp-for="ConcurrencyStamp" type="hidden">
+    <section class="panel module-panel">
+        <div class="module-head">
+            <h2>Account</h2>
+            @if (Model.IsEdit)
+            {
+                <div class="detail-tags">
+                    @if (Model.IsLockedOut) { <span class="pill disabled">Locked</span> }
+                    @if (Model.MustChangePassword) { <span class="pill pending">New password needed</span> }
+                </div>
+            }
+        </div>
+        <div class="module-fields">
+            @if (Model.IsEdit)
+            {
+                <label>User name<input value="@Model.UserName" readonly></label>
+            }
+            else
+            {
+                <label>User name *<input asp-for="UserName" required maxlength="40" autocomplete="off" placeholder="staff03"><span asp-validation-for="UserName" class="field-error"></span></label>
+            }
+            <label>Display name *<input asp-for="DisplayName" required maxlength="100" placeholder="Juan Dela Cruz"><span asp-validation-for="DisplayName" class="field-error"></span></label>
+            <label>Email<input asp-for="Email" type="email" maxlength="256" placeholder="Used for approval emails"><span asp-validation-for="Email" class="field-error"></span></label>
+            <label>Role *
+                <select asp-for="Role" disabled="@Model.IsCurrentUser">
+                    <option value="Staff">Staff</option>
+                    <option value="Manager">Manager</option>
+                </select>
+                @if (Model.IsCurrentUser) { <input type="hidden" name="Role" value="@Model.Role"> }
+                <span asp-validation-for="Role" class="field-error"></span>
+            </label>
+            @if (!Model.IsEdit)
+            {
+                <label>Temporary password *<input asp-for="TemporaryPassword" type="password" maxlength="128" autocomplete="new-password" value="" placeholder="10+ characters, upper, lower, digit, symbol"><span asp-validation-for="TemporaryPassword" class="field-error"></span></label>
+            }
+        </div>
+        @if (Model.IsEdit)
+        {
+            <div class="module-actions">
+                @if (Model.IsCurrentUser)
+                {
+                    <input type="hidden" name="IsActive" value="true">
+                    <span class="module-note">This is your own account: you cannot change your role or disable it here.</span>
+                }
+                else
+                {
+                    <label class="module-check"><input asp-for="IsActive" type="checkbox"> Active (can sign in)</label>
+                }
+            </div>
+        }
+        <div class="module-actions">
+            <button class="btn btn-primary" type="submit">@(Model.IsEdit ? "Save User" : "Create User")</button>
+            <a class="btn btn-outline" href="/users">Cancel</a>
+        </div>
+        @if (!Model.IsEdit)
+        {
+            <p class="module-note">Give the temporary password to the user in person or by phone. They must choose their own password at first sign-in.</p>
+        }
+    </section>
+</form>
+
+@if (Model.IsEdit)
+{
+    <section class="panel module-panel">
+        <div class="module-head"><h2>Reset Password</h2></div>
+        @if (Model.IsCurrentUser)
+        {
+            <p class="module-note">To change your own password, use <a href="/profile/password">My Profile</a>.</p>
+        }
+        else
+        {
+            <form method="post" action="/users/@Uri.EscapeDataString(Model.Id!)/reset-password" class="state-form"
+                  data-confirm="Set a temporary password for @Model.UserName? Their open sessions end at once.">
+                @Html.AntiForgeryToken()
+                <label class="state-note">Temporary password<input name="temporaryPassword" type="password" maxlength="128" autocomplete="new-password" required placeholder="10+ characters, upper, lower, digit, symbol"></label>
+                <button type="submit" class="btn btn-outline">Reset Password</button>
+            </form>
+            <p class="module-note">The account is also unlocked, and the user must choose a new password at the next sign-in. Created @UserLabels.When(Model.CreatedAtUtc).</p>
+        }
+    </section>
+}

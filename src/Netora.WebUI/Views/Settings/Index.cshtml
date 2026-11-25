@@ -1,0 +1,123 @@
+@model SettingsViewModel
+@{
+    ViewData["Title"] = "Settings";
+    ViewData["Nav"] = "settings";
+    var d = Model.Data;
+    var formError = ViewData.ModelState[string.Empty]?.Errors.FirstOrDefault()?.ErrorMessage;
+}
+<div class="heading">
+    <div class="heading-title">
+        <svg class="icon"><use href="#users" /></svg>
+        <div>
+            <h1>Settings</h1>
+            <p>Configure application, router, notifications, and operational defaults.</p>
+        </div>
+    </div>
+    <div class="heading-actions"><a class="btn btn-outline" href="/customers">Customers</a></div>
+</div>
+@if (TempData[Netora.WebUI.Controllers.CustomersController.ToastKey] is string toast)
+{
+    <div class="form-success" role="status">@toast</div>
+}
+@if (TempData[Netora.WebUI.Controllers.CustomersController.ErrorKey] is string error)
+{
+    <div class="form-alert" role="alert">@error</div>
+}
+@if (formError is not null)
+{
+    <div class="form-alert" role="alert">@formError</div>
+}
+@if (d is null)
+{
+    <section class="panel" role="alert"><p class="mb-0" style="color:var(--muted)">@Model.ErrorMessage</p></section>
+    return;
+}
+
+<section class="panel module-panel">
+    <div class="module-head"><h2>MikroTik Connection</h2></div>
+    <form method="post" action="/settings/router" novalidate>
+        @Html.AntiForgeryToken()
+        <div class="module-fields">
+            <label>Router Name<input asp-for="Router.Name" maxlength="100" placeholder="Primary MikroTik"><span asp-validation-for="Router.Name" class="field-error"></span></label>
+            <label>Router Address<input asp-for="Router.Address" maxlength="253" placeholder="192.168.88.1 or router.example"><span asp-validation-for="Router.Address" class="field-error"></span></label>
+            <label>API Protocol<select disabled><option>HTTPS REST API</option></select></label>
+            <label>Connection Status<input value="Not tested" readonly></label>
+            <label>HTTPS Port<input asp-for="Router.Port" type="number" min="1" max="65535"><span asp-validation-for="Router.Port" class="field-error"></span></label>
+            <label>API User Name<input asp-for="Router.UserName" maxlength="100" autocomplete="off" placeholder="netora-api"><span asp-validation-for="Router.UserName" class="field-error"></span></label>
+            <label>API Password
+                <input asp-for="Router.NewPassword" type="password" maxlength="128" autocomplete="new-password" value=""
+                       placeholder="@(d.Router.PasswordSet ? "Saved. Leave blank to keep it" : "Not set")">
+                <span asp-validation-for="Router.NewPassword" class="field-error"></span>
+            </label>
+        </div>
+        <div class="module-actions">
+            <button type="submit" class="btn btn-primary">Save Router Settings</button>
+            <button type="button" class="btn btn-outline" disabled title="Connecting to the router is added with the MikroTik module (09)">Test Connection</button>
+            @if (d.Router.PasswordSet)
+            {
+                <label class="module-check"><input asp-for="Router.ClearPassword" type="checkbox"> Remove the saved password</label>
+            }
+        </div>
+    </form>
+    <p class="module-note">The password is stored encrypted on the server and is never shown again. Netora does not connect to the router yet; connecting, testing and sending approved changes come with the MikroTik module.</p>
+</section>
+
+<section class="panel module-panel" id="notifications">
+    <div class="module-head">
+        <h2>Notification Settings</h2>
+        <span class="pill @(d.Email.NotReadyReason is null ? "active" : "unknown")">@(d.Email.NotReadyReason switch { null => "Emails on", "Disabled" => "Emails off", _ => "Not configured" })</span>
+    </div>
+    @if (Model.TestResult is { } test)
+    {
+        <div class="@(test.Sent ? "form-success" : "form-alert")" role="status">Test email: @test.Message</div>
+    }
+    <form method="post" action="/settings/email" novalidate>
+        @Html.AntiForgeryToken()
+        <div class="module-fields">
+            <label>SMTP Sender<input asp-for="Email.From" type="email" maxlength="256" placeholder="noreply@example.com"><span asp-validation-for="Email.From" class="field-error"></span></label>
+            <label>Manager Approval Emails<input value="All Managers (from user directory): @d.Email.ManagerRecipients with an email address" readonly></label>
+            <label>Sender Name<input asp-for="Email.FromName" maxlength="100" placeholder="Netora"><span asp-validation-for="Email.FromName" class="field-error"></span></label>
+            <label>Link Address (optional)<input asp-for="Email.AppBaseUrl" maxlength="300" placeholder="https://netora.example/"><span asp-validation-for="Email.AppBaseUrl" class="field-error"></span></label>
+            <label class="span-2">SMTP Server (from configuration)
+                <input readonly value="@(string.IsNullOrWhiteSpace(d.Email.SmtpHost) ? "Not set" : $"{d.Email.SmtpHost}:{d.Email.SmtpPort}, {(d.Email.UseSsl ? "encrypted" : "not encrypted")}, login {(d.Email.SmtpLoginSet ? "set" : "not set")}{(d.Email.CheckCertificateRevocation ? "" : ", revocation check off")}")">
+            </label>
+        </div>
+        <div class="module-actions">
+            <label class="module-check"><input asp-for="Email.Enabled" type="checkbox"> Send approval emails</label>
+        </div>
+        <div class="module-actions">
+            <button type="submit" class="btn btn-primary">Save Settings</button>
+        </div>
+    </form>
+    <form method="post" action="/settings/email/test" class="module-actions">
+        @Html.AntiForgeryToken()
+        <button type="submit" class="btn btn-outline">Send Test Email to Me</button>
+        <span class="module-note">Sends one email now to your own address (set in My Profile), even while approval emails are off.</span>
+    </form>
+    <p class="module-note">The SMTP server and its login are kept in configuration and secrets on the server (see the README), never on this page.</p>
+</section>
+
+<section class="panel module-panel">
+    <div class="module-head"><h2>Initial Configuration</h2></div>
+    <div class="table-scroll">
+        <table class="customers-table all-table">
+            <thead><tr><th>Item</th><th>Status</th><th>Detail</th></tr></thead>
+            <tbody>
+                @foreach (var s in d.Setup)
+                {
+                    <tr>
+                        <td>@s.Item</td>
+                        <td><span class="pill @(s.Done ? "active" : "disabled")">@(s.Done ? "Done" : "To do")</span></td>
+                        <td>@s.Detail</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="panel module-panel">
+    <div class="module-head"><h2>Theme &amp; Security</h2></div>
+    <p>Each user's light or dark theme is saved to their account when they use the switch in the top bar, and follows them to other browsers. Production configuration includes secure cookies, ASP.NET Core Identity, server-side role checks, and encrypted credential storage.</p>
+    <p class="module-note">Your own name, email address, theme and password are in <a href="/profile">My Profile</a>.</p>
+</section>

@@ -11,7 +11,7 @@
         </div>
     </div>
     <nav class="sidebar-nav" aria-label="Main navigation">
-        @foreach (var item in NavItems.All)
+        @foreach (var item in NavItems.All.Where(i => !i.ManagerOnly || User.IsInRole("Manager")))
         {
             var isCurrent = item.Key == current;
             <a href="@item.Path" class="nav-item" data-current="@(isCurrent ? "true" : "false")" aria-current="@(isCurrent ? "page" : null)">

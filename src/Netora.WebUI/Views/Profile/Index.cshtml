@@ -1,0 +1,49 @@
+@model ProfileViewModel
+@{
+    ViewData["Title"] = "My Profile";
+    var formError = ViewData.ModelState[string.Empty]?.Errors.FirstOrDefault()?.ErrorMessage;
+}
+<div class="heading">
+    <div class="heading-title">
+        <svg class="icon"><use href="#users" /></svg>
+        <div>
+            <h1>My Profile</h1>
+            <p>@Model.UserName <span class="detail-dot">•</span> @Model.Role</p>
+        </div>
+    </div>
+    <div class="heading-actions"><a class="btn btn-outline" href="/customers">Customers</a></div>
+</div>
+@if (TempData[Netora.WebUI.Controllers.CustomersController.ToastKey] is string toast)
+{
+    <div class="form-success" role="status">@toast</div>
+}
+@if (formError is not null)
+{
+    <div class="form-alert" role="alert">@formError</div>
+}
+
+<form method="post" action="/profile" novalidate>
+    @Html.AntiForgeryToken()
+    <section class="panel module-panel">
+        <div class="module-head"><h2>Account</h2></div>
+        <div class="module-fields">
+            <label>User name<input value="@Model.UserName" readonly></label>
+            <label>Role<input value="@Model.Role" readonly></label>
+            <label>Display name *<input asp-for="DisplayName" required maxlength="100"><span asp-validation-for="DisplayName" class="field-error"></span></label>
+            <label>Email<input asp-for="Email" type="email" maxlength="256" placeholder="Where approval emails are sent"><span asp-validation-for="Email" class="field-error"></span></label>
+        </div>
+        <div class="module-actions">
+            <button class="btn btn-primary" type="submit">Save Profile</button>
+        </div>
+        @if (Model.Role == "Manager")
+        {
+            <p class="module-note">Managers receive approval request emails at this address. Staff receive the decision on their own requests.</p>
+        }
+    </section>
+</form>
+
+<section class="panel module-panel">
+    <div class="module-head"><h2>Theme &amp; Password</h2></div>
+    <p>Theme: <strong>@(Model.Theme switch { "dark" => "Dark", "light" => "Light", _ => "Not saved yet" })</strong>. Use the sun and moon switch in the top bar; your choice is saved to your account.</p>
+    <div class="module-actions"><a class="btn btn-outline" href="/profile/password">Change Password</a></div>
+</section>

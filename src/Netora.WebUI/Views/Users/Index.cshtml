@@ -1,0 +1,65 @@
+@model Netora.Application.Users.UserListDto?
+@{
+    ViewData["Title"] = "User Management";
+    ViewData["Nav"] = "users";
+}
+<div class="heading">
+    <div class="heading-title">
+        <svg class="icon"><use href="#users" /></svg>
+        <div>
+            <h1>User Management</h1>
+            <p>Manage application access and staff permissions.</p>
+        </div>
+    </div>
+    <div class="heading-actions"><a class="btn btn-outline" href="/customers">Customers</a></div>
+</div>
+@if (TempData[Netora.WebUI.Controllers.CustomersController.ToastKey] is string toast)
+{
+    <div class="form-success" role="status">@toast</div>
+}
+@if (TempData[Netora.WebUI.Controllers.CustomersController.ErrorKey] is string error)
+{
+    <div class="form-alert" role="alert">@error</div>
+}
+@if (Model is null)
+{
+    <section class="panel" role="alert"><p class="mb-0" style="color:var(--muted)">@ViewData["Error"]</p></section>
+    return;
+}
+
+<section class="panel module-panel">
+    <div class="module-head">
+        <h2>Application Users</h2>
+        <a class="btn btn-primary" href="/users/new">Add User</a>
+    </div>
+    <div class="table-scroll">
+        <table class="customers-table all-table">
+            <thead><tr><th>User</th><th>Role</th><th>Email</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody>
+                @foreach (var u in Model.Items)
+                {
+                    <tr>
+                        <td>
+                            @u.UserName
+                            @if (u.DisplayName != u.UserName) { <span class="detail-secondary"> (@u.DisplayName)</span> }
+                        </td>
+                        <td>@u.Role</td>
+                        <td>@(u.Email ?? "—")</td>
+                        <td>
+                            <span class="pill @UserLabels.StatusPill(u)">@UserLabels.Status(u)</span>
+                            @if (u.MustChangePassword && u.IsActive) { <span class="pill pending" title="Has a temporary password">New password needed</span> }
+                        </td>
+                        <td><a class="btn btn-primary" href="/users/@u.Id/edit">Edit</a></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    <p class="module-note">@Model.ActiveManagers active Manager(s) and @Model.ActiveStaff active Staff. Managers without an email address receive no approval emails.</p>
+</section>
+
+<section class="panel module-panel">
+    <div class="module-head"><h2>Role Permissions</h2></div>
+    <p>Manager can approve PPPoE operations and access restricted customers. Staff can request changes but cannot see Managers Only customer records. Identity and API authorization enforce permissions in production.</p>
+    <p class="module-note">Only Managers can open User Management and Settings. New accounts and password resets get a temporary password that must be replaced at the next sign-in. Disabling an account or changing its role ends its open sessions at once. At least one active Manager always remains.</p>
+</section>

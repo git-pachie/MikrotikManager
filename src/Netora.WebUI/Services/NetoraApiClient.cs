@@ -7,6 +7,8 @@ using Netora.Application.Customers.Attachments;
 using Netora.Application.Health;
 using Netora.Application.Approvals;
 using Netora.Application.Pppoe;
+using Netora.Application.Settings;
+using Netora.Application.Users;
 
 namespace Netora.WebUI.Services;
 
@@ -42,9 +44,27 @@ public interface INetoraApiClient
     Task<ApiResponse<ApprovalListDto>> GetApprovalsAsync(ApprovalListQuery query, CancellationToken cancellationToken);
     Task<ApiResponse<ApprovalDetailDto>> GetApprovalAsync(long requestId, CancellationToken cancellationToken);
     Task<ApiResponse<ApprovalRequestDto>> DecideApprovalAsync(long requestId, DecidePppoeRequest decision, CancellationToken cancellationToken);
-}
+    Task<ApiResponse<UserListDto>> GetUsersAsync(CancellationToken cancellationToken);
+    Task<ApiResponse<UserDetailDto>> GetUserAsync(string id, CancellationToken cancellationToken);
+    Task<ApiResponse<UserChangedDto>> CreateUserAsync(CreateUserRequest request, CancellationToken cancellationToken);
+    Task<ApiResponse<UserChangedDto>> UpdateUserAsync(string id, UpdateUserRequest request, CancellationToken cancellationToken);
+    Task<ApiResponse<UserChangedDto>> ResetUserPasswordAsync(string id, ResetPasswordRequest request, CancellationToken cancellationToken);
+    Task<ApiResponse<ProfileDto>> GetProfileAsync(CancellationToken cancellationToken);
+    Task<ApiResponse<ChangedDto>> UpdateProfileAsync(UpdateProfileRequest request, CancellationToken cancellationToken);
+    Task<ApiResponse<ChangedDto>> SetThemeAsync(ThemeRequest request, CancellationToken cancellationToken);
+    Task<ApiResponse<LoginResultDto>> ChangePasswordAsync(ChangePasswordRequest request, CancellationToken cancellationToken);
+    Task<ApiResponse<SettingsDto>> GetSettingsAsync(CancellationToken cancellationToken);
+    Task<ApiResponse<SavedDto>> UpdateRouterSettingsAsync(UpdateRouterSettingsRequest request, CancellationToken cancellationToken);
+    Task<ApiResponse<SavedDto>> UpdateEmailSettingsAsync(UpdateEmailSettingsRequest request, CancellationToken cancellationToken);
+    Task<ApiResponse<TestEmailResultDto>> SendTestEmailAsync(CancellationToken cancellationToken);}
 
 public sealed record PppoeChangedDto(bool Changed);
+
+public sealed record UserChangedDto(string Id, bool Changed);
+
+public sealed record ChangedDto(bool Changed);
+
+public sealed record SavedDto(bool Saved);
 
 /// <summary>A streamed file from the API, or the error code when there is none.</summary>
 public sealed record ApiFile(HttpResponseMessage? Response, string? ErrorCode);
@@ -140,6 +160,45 @@ public sealed class NetoraApiClient(HttpClient httpClient, ILogger<NetoraApiClie
 
     public Task<ApiResponse<ApprovalRequestDto>> DecideApprovalAsync(long requestId, DecidePppoeRequest decision, CancellationToken cancellationToken)
         => SendAsync<ApprovalRequestDto>(HttpMethod.Post, $"api/v1/approvals/{requestId}/decision", decision, cancellationToken);
+
+    public Task<ApiResponse<UserListDto>> GetUsersAsync(CancellationToken cancellationToken)
+        => SendAsync<UserListDto>(HttpMethod.Get, "api/v1/users", null, cancellationToken);
+
+    public Task<ApiResponse<UserDetailDto>> GetUserAsync(string id, CancellationToken cancellationToken)
+        => SendAsync<UserDetailDto>(HttpMethod.Get, $"api/v1/users/{Uri.EscapeDataString(id)}", null, cancellationToken);
+
+    public Task<ApiResponse<UserChangedDto>> CreateUserAsync(CreateUserRequest request, CancellationToken cancellationToken)
+        => SendAsync<UserChangedDto>(HttpMethod.Post, "api/v1/users", request, cancellationToken);
+
+    public Task<ApiResponse<UserChangedDto>> UpdateUserAsync(string id, UpdateUserRequest request, CancellationToken cancellationToken)
+        => SendAsync<UserChangedDto>(HttpMethod.Put, $"api/v1/users/{Uri.EscapeDataString(id)}", request, cancellationToken);
+
+    public Task<ApiResponse<UserChangedDto>> ResetUserPasswordAsync(string id, ResetPasswordRequest request, CancellationToken cancellationToken)
+        => SendAsync<UserChangedDto>(HttpMethod.Post, $"api/v1/users/{Uri.EscapeDataString(id)}/reset-password", request, cancellationToken);
+
+    public Task<ApiResponse<ProfileDto>> GetProfileAsync(CancellationToken cancellationToken)
+        => SendAsync<ProfileDto>(HttpMethod.Get, "api/v1/profile", null, cancellationToken);
+
+    public Task<ApiResponse<ChangedDto>> UpdateProfileAsync(UpdateProfileRequest request, CancellationToken cancellationToken)
+        => SendAsync<ChangedDto>(HttpMethod.Put, "api/v1/profile", request, cancellationToken);
+
+    public Task<ApiResponse<ChangedDto>> SetThemeAsync(ThemeRequest request, CancellationToken cancellationToken)
+        => SendAsync<ChangedDto>(HttpMethod.Put, "api/v1/profile/theme", request, cancellationToken);
+
+    public Task<ApiResponse<LoginResultDto>> ChangePasswordAsync(ChangePasswordRequest request, CancellationToken cancellationToken)
+        => SendAsync<LoginResultDto>(HttpMethod.Post, "api/v1/profile/password", request, cancellationToken);
+
+    public Task<ApiResponse<SettingsDto>> GetSettingsAsync(CancellationToken cancellationToken)
+        => SendAsync<SettingsDto>(HttpMethod.Get, "api/v1/settings", null, cancellationToken);
+
+    public Task<ApiResponse<SavedDto>> UpdateRouterSettingsAsync(UpdateRouterSettingsRequest request, CancellationToken cancellationToken)
+        => SendAsync<SavedDto>(HttpMethod.Put, "api/v1/settings/router", request, cancellationToken);
+
+    public Task<ApiResponse<SavedDto>> UpdateEmailSettingsAsync(UpdateEmailSettingsRequest request, CancellationToken cancellationToken)
+        => SendAsync<SavedDto>(HttpMethod.Put, "api/v1/settings/email", request, cancellationToken);
+
+    public Task<ApiResponse<TestEmailResultDto>> SendTestEmailAsync(CancellationToken cancellationToken)
+        => SendAsync<TestEmailResultDto>(HttpMethod.Post, "api/v1/settings/email/test", null, cancellationToken);
 
     public Task<ApiResponse<CustomerListDto>> GetCustomersAsync(CustomerListQuery query, CancellationToken cancellationToken)
     {

@@ -1,9 +1,7 @@
-using MailKit.Net.Smtp;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using MimeKit;
 using Netora.Application.Approvals;
 using Netora.Application.Auth;
@@ -20,7 +18,6 @@ namespace Netora.Infrastructure.Approvals;
 internal sealed class ApprovalEmailDispatcher(
     ApprovalEmailNotifier notifier,
     IServiceScopeFactory scopes,
-    IOptionsMonitor<EmailOptions> options,
     ILogger<ApprovalEmailDispatcher> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -36,7 +33,7 @@ internal sealed class ApprovalEmailDispatcher(
                 catch (Exception ex) when (ex is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
                 {
                     logger.LogWarning("ApprovalEmailFailed RequestId={RequestId} Kind={Kind} Error={Error}",
-                        item.Notice.RequestId, item.Kind, ex.GetType().Name + ": " + ex.Message);
+                        item.Notice.RequestId, item.Kind, SmtpEmailSender.Describe(ex));
                 }
             }
         }
@@ -49,7 +46,9 @@ internal sealed class ApprovalEmailDispatcher(
 
     private async Task SendAsync(QueuedApprovalNotice item, CancellationToken cancellationToken)
     {
-        var settings = options.CurrentValue;
+        EmailOptions settings;
+        using (var scope = scopes.CreateScope())
+            settings = await scope.ServiceProvider.GetRequiredService<IEmailSettingsProvider>().GetAsync(cancellationToken);
         var notice = item.Notice;
         if (settings.NotReadyReason is { } reason)
         {
@@ -71,14 +70,7 @@ internal sealed class ApprovalEmailDispatcher(
         (message.Subject, var text) = Compose(item, settings);
         message.Body = new TextPart("plain") { Text = text };
 
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(Math.Clamp(settings.Smtp.TimeoutSeconds, 5, 120)));
-        using var client = new SmtpClient { Timeout = settings.Smtp.TimeoutSeconds * 1000 };
-        await client.ConnectAsync(settings.Smtp.Host!, settings.Smtp.Port, settings.Smtp.SocketOptions, timeout.Token);
-        if (!string.IsNullOrWhiteSpace(settings.Smtp.UserName))
-            await client.AuthenticateAsync(settings.Smtp.UserName, settings.Smtp.Password ?? string.Empty, timeout.Token);
-        await client.SendAsync(message, timeout.Token);
-        await client.DisconnectAsync(true, timeout.Token);
+        await SmtpEmailSender.SendAsync(settings, message, cancellationToken);
 
         logger.LogInformation("ApprovalEmailSent RequestId={RequestId} Kind={Kind} Recipients={Count}", notice.RequestId, item.Kind, recipients.Count);
     }
