@@ -27,6 +27,7 @@ internal sealed class SettingsService(
     IEmailSettingsProvider emailSettings,
     IDataProtectionProvider protection,
     IConfiguration configuration,
+    Microsoft.Extensions.Options.IOptions<Router.RouterOptions> routerOptions,
     IValidator<UpdateRouterSettingsRequest> routerValidator,
     IValidator<UpdateEmailSettingsRequest> emailValidator,
     ISecurityEventWriter events,
@@ -45,7 +46,11 @@ internal sealed class SettingsService(
         var passwordSet = !string.IsNullOrEmpty(Value(AppSettingKeys.RouterPassword));
         var router = new RouterSettingsDto(Value(AppSettingKeys.RouterName), address,
             int.TryParse(Value(AppSettingKeys.RouterPort), out var port) ? port : DefaultRouterPort, routerUser, passwordSet,
-            ConnectionStatus: "NotTested");
+            ConnectionStatus: Value(AppSettingKeys.RouterLastTestOk) switch { "true" => "Connected", "false" => "Failed", _ => "NotTested" },
+            Mode: routerOptions.Value.IsRouterOs ? Router.RouterOptions.RouterOsMode : Router.RouterOptions.MockMode,
+            CertificateThumbprint: Value(AppSettingKeys.RouterCertificateThumbprint),
+            LastTestedAtUtc: DateTimeOffset.TryParse(Value(AppSettingKeys.RouterLastTestAtUtc), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind, out var tested) ? tested : null,
+            LastTestMessage: Value(AppSettingKeys.RouterLastTestMessage));
 
         var email = await emailSettings.GetAsync(cancellationToken);
         var managers = await users.GetUsersInRoleAsync(Roles.Manager);
@@ -73,7 +78,11 @@ internal sealed class SettingsService(
                     _ => emailDto.SmtpLoginSet ? "On." : "On, but the SMTP login is not set in the secrets.",
                 }),
             new("MikroTik router details", routerSaved,
-                routerSaved ? "Saved. Connecting to the router is added with the MikroTik module (09)." : "Enter the router address, user name and password below."),
+                !routerSaved ? "Enter the router address, user name and password below."
+                : router.ConnectionStatus == "Connected" ? $"Saved and tested ({router.Mode})."
+                : "Saved. Use Test Connection to check it."),
+            new("Router mode", router.Mode == Router.RouterOptions.RouterOsMode,
+                router.Mode == Router.RouterOptions.RouterOsMode ? "RouterOS: changes go to the real router." : "Mock: changes go to a pretend router (Router:Mode in appsettings). Set RouterOS to use the real router."),
         };
 
         return new SettingsDto(router, emailDto, setup);
@@ -89,6 +98,7 @@ internal sealed class SettingsService(
         await SetAsync(AppSettingKeys.RouterAddress, Clean(request.Address), actorUserId, now, cancellationToken);
         await SetAsync(AppSettingKeys.RouterPort, request.Port.ToString(System.Globalization.CultureInfo.InvariantCulture), actorUserId, now, cancellationToken);
         await SetAsync(AppSettingKeys.RouterUserName, Clean(request.UserName), actorUserId, now, cancellationToken);
+        await SetAsync(AppSettingKeys.RouterCertificateThumbprint, UpdateRouterSettingsRequest.NormalizeThumbprint(request.CertificateThumbprint), actorUserId, now, cancellationToken);
         var passwordChange = "kept";
         if (request.ClearPassword)
         {

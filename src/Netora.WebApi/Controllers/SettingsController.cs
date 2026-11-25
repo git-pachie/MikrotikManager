@@ -11,7 +11,7 @@ namespace Netora.WebApi.Controllers;
 [ApiController]
 [Route("api/v1/settings")]
 [Authorize(Policy = Policies.ManagerOnly)]
-public sealed class SettingsController(ISettingsService settings) : ControllerBase
+public sealed class SettingsController(ISettingsService settings, Netora.Application.Router.IRouterConnectionTester tester) : ControllerBase
 {
     [HttpGet]
     [ProducesResponseType(typeof(ApiResponse<SettingsDto>), StatusCodes.Status200OK)]
@@ -24,6 +24,12 @@ public sealed class SettingsController(ISettingsService settings) : ControllerBa
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> UpdateRouter([FromBody] UpdateRouterSettingsRequest request, CancellationToken cancellationToken)
         => Map(await settings.UpdateRouterAsync(request, ActorId, cancellationToken));
+
+    /// <summary>Reads the router identity and RouterOS version with the saved details, and remembers the result.</summary>
+    [HttpPost("router/test")]
+    [ProducesResponseType(typeof(ApiResponse<Netora.Application.Router.RouterTestResultDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> TestRouter(CancellationToken cancellationToken)
+        => Ok(ApiResponse<Netora.Application.Router.RouterTestResultDto>.Ok(await tester.TestAsync(ActorId, cancellationToken), HttpContext.TraceIdentifier));
 
     [HttpPut("email")]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]

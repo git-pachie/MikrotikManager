@@ -70,7 +70,10 @@ public sealed record ApprovalDetailDto(
     bool IsManagerOnly,
     bool CanDecide,
     // Why Approve would be refused right now (for example no password yet). Null when it can be approved.
-    string? ApproveBlockedReason);
+    string? ApproveBlockedReason,
+    // "Mock" or "RouterOS": which router the change is (or was) sent to.
+    string RouterMode = "Mock",
+    bool CanRetry = false);
 
 public interface IApprovalQueries
 {
@@ -84,4 +87,11 @@ public interface IApprovalCommands
 {
     /// <summary>Decide by request ID (Pending Approvals page). Same rules as the PPPoE decision endpoint.</summary>
     Task<PppoeResult> DecideAsync(long requestId, DecidePppoeRequest decision, CustomerActor actor, CancellationToken cancellationToken);
+
+    /// <summary>Manager only: sends an approved request whose router status is Not sent or Failed again (04.05).</summary>
+    Task<RetryResult> RetryAsync(long requestId, CustomerActor actor, CancellationToken cancellationToken);
 }
+
+public enum RetryOutcome { Ok, Forbidden, NotFound, NotRetryable }
+
+public sealed record RetryResult(RetryOutcome Outcome, Router.ProvisioningResult? Result = null);

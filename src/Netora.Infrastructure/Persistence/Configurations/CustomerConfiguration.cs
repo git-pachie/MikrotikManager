@@ -19,6 +19,7 @@ internal sealed class CustomerConfiguration : IEntityTypeConfiguration<Customer>
         builder.Property(c => c.NapBox).HasMaxLength(50).IsRequired();
         builder.Property(c => c.OnuSerial).HasMaxLength(50);
         builder.Property(c => c.OnuModel).HasMaxLength(100);
+        builder.Property(c => c.RouterSecretId).HasMaxLength(20);
         builder.Property(c => c.Email).HasMaxLength(256);
         builder.Property(c => c.Notes).HasMaxLength(1000);
         builder.Property(c => c.CreatedByUserId).HasMaxLength(450);

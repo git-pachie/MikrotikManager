@@ -24,6 +24,7 @@ internal sealed class PppoeCommands(
     IApprovalRepository approvals,
     IPppoePasswordProtector passwords,
     IApprovalNotifier notifier,
+    Router.IRouterProvisioner provisioner,
     ILogger<PppoeCommands> logger) : IPppoeCommands
 {
     public async Task<PppoeResult> UpdateAsync(int customerId, UpdatePppoeRequest request, CustomerActor actor,
@@ -161,7 +162,7 @@ internal sealed class PppoeCommands(
             customer.Id, approval.Id, operation, approval.Status, actor.UserId);
         if (approval.Status == ApprovalStatus.Pending)
             Notify(() => notifier.RequestSubmitted(ApprovalNotice.From(approval)), approval.Id);
-        return new(PppoeOutcome.Ok, Request: PppoeStates.ToDto(approval));
+        return new(PppoeOutcome.Ok, Request: await ProvisionIfApprovedAsync(approval, actor, cancellationToken));
     }
 
     public async Task<PppoeResult> DecideAsync(int customerId, long requestId, DecidePppoeRequest decision, CustomerActor actor,
@@ -217,9 +218,29 @@ internal sealed class PppoeCommands(
         logger.LogInformation("ApprovalRequestDecided CustomerId={CustomerId} RequestId={RequestId} Operation={Operation} Status={Status} ActorUserId={ActorUserId}",
             customer.Id, approval.Id, approval.Operation, approval.Status, actor.UserId);
         Notify(() => notifier.RequestDecided(ApprovalNotice.From(approval)), approval.Id);
-        return new(PppoeOutcome.Ok, Request: PppoeStates.ToDto(approval));
+        return new(PppoeOutcome.Ok, Request: await ProvisionIfApprovedAsync(approval, actor, cancellationToken));
     }
 
+
+    /// <summary>
+    /// The decision is saved first; only then is the change sent to the router (08.04). A router failure is recorded
+    /// on the request (Failed, with the error) and never undoes the approval.
+    /// </summary>
+    private async Task<ApprovalRequestDto> ProvisionIfApprovedAsync(ApprovalRequest approval, CustomerActor actor, CancellationToken cancellationToken)
+    {
+        var dto = PppoeStates.ToDto(approval);
+        if (approval.Status != ApprovalStatus.Approved) return dto;
+        try
+        {
+            var result = await provisioner.ProvisionAsync(approval.Id, actor.UserId, actor.UserName, cancellationToken);
+            return dto with { ProvisioningStatus = result.Status };
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogError(ex, "RouterProvisioningNotStarted RequestId={RequestId}", approval.Id);
+            return dto;
+        }
+    }
 
     private static void MarkApproved(ApprovalRequest approval, CustomerActor actor, DateTimeOffset now, string? note)
     {

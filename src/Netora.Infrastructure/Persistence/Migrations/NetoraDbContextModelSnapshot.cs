@@ -340,6 +340,10 @@ namespace Netora.Infrastructure.Persistence.Migrations
                         .HasMaxLength(40)
                         .HasColumnType("nvarchar(40)");
 
+                    b.Property<string>("RouterSecretId")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
                     b.Property<string>("RouterSyncStatus")
                         .IsRequired()
                         .HasMaxLength(20)

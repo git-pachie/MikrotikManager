@@ -5,6 +5,9 @@ namespace Netora.WebUI.Models;
 
 public sealed class CustomerDetailViewModel
 {
+    /// <summary>Router check run when the profile was opened (09.03). Null when the check itself could not be made.</summary>
+    public Netora.Application.Router.RouterStatusDto? Router { get; init; }
+
     /// <summary>Null when the API call failed; the view then shows <see cref="ErrorMessage"/>.</summary>
     public CustomerDetailDto? Data { get; init; }
 

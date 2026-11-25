@@ -126,3 +126,10 @@ public static class PppoeLabels
     public static string When(DateTimeOffset? value)
         => value?.ToLocalTime().ToString("MMM d, yyyy h:mm tt", CultureInfo.InvariantCulture) ?? "—";
 }
+
+public sealed record PppoeImportViewModel
+{
+    public bool IsManager { get; init; }
+    public Netora.Application.Router.ImportScanDto? Scan { get; init; }
+    public string? Error { get; init; }
+}

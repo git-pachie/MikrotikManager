@@ -7,7 +7,7 @@ using Netora.Infrastructure.Persistence;
 
 namespace Netora.Infrastructure.Approvals;
 
-internal sealed class ApprovalQueries(NetoraDbContext db) : IApprovalQueries
+internal sealed class ApprovalQueries(NetoraDbContext db, Netora.Application.Router.IRouterClient? router = null) : IApprovalQueries
 {
     public async Task<ApprovalListDto> ListAsync(ApprovalListQuery query, bool viewerIsManager, CancellationToken cancellationToken)
     {
@@ -101,7 +101,10 @@ internal sealed class ApprovalQueries(NetoraDbContext db) : IApprovalQueries
             c.Id, Customer.DisplayId(c.Id), Name(c.FirstName, c.LastName), c.Status.ToString(), PppoeStates.AccountState(c.Status),
             c.PppoeUsername, c.PlanName, c.PppoePasswordProtected != null, c.IsManagerOnly,
             CanDecide: viewerIsManager && pending,
-            ApproveBlockedReason: blocked);
+            ApproveBlockedReason: blocked,
+            RouterMode: router?.Mode ?? "Mock",
+            CanRetry: viewerIsManager && r.Status == ApprovalStatus.Approved
+                      && r.ProvisioningStatus is ProvisioningStatus.NotSent or ProvisioningStatus.Failed);
     }
 
     private static string Name(string first, string last) => string.IsNullOrWhiteSpace(last) ? first : $"{first} {last}";

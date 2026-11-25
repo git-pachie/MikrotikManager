@@ -27,7 +27,7 @@ public class SettingsController(INetoraApiClient apiClient) : Controller
         if (ModelState.IsValid)
         {
             var result = await apiClient.UpdateRouterSettingsAsync(
-                new UpdateRouterSettingsRequest(form.Name, form.Address, form.Port, form.UserName, form.NewPassword, form.ClearPassword), cancellationToken);
+                new UpdateRouterSettingsRequest(form.Name, form.Address, form.Port, form.UserName, form.NewPassword, form.ClearPassword, form.CertificateThumbprint), cancellationToken);
             if (result.Success)
             {
                 TempData[CustomersController.ToastKey] = "Router settings saved.";
@@ -39,6 +39,19 @@ public class SettingsController(INetoraApiClient apiClient) : Controller
         form.NewPassword = null;
         model.Router = form;
         return View("Index", model);
+    }
+
+    /// <summary>Test Connection: reads the router identity with the saved settings.</summary>
+    [HttpPost("/settings/router/test")]
+    public async Task<IActionResult> TestRouter(CancellationToken cancellationToken)
+    {
+        if (!IsManager) return Denied();
+        var result = await apiClient.TestRouterAsync(cancellationToken);
+        if (result.Data is { } r)
+            TempData[r.Connected ? CustomersController.ToastKey : CustomersController.ErrorKey] = (r.Mode == "Mock" ? "Mock router: " : "") + r.Message;
+        else
+            TempData[CustomersController.ErrorKey] = "The connection was not tested. " + (result.Error?.Message ?? "Unexpected error.");
+        return Redirect("/settings");
     }
 
     [HttpPost("/settings/email")]
@@ -81,7 +94,11 @@ public class SettingsController(INetoraApiClient apiClient) : Controller
         return new SettingsViewModel
         {
             Data = d,
-            Router = new RouterSettingsForm { Name = d.Router.Name, Address = d.Router.Address, Port = d.Router.Port, UserName = d.Router.UserName },
+            Router = new RouterSettingsForm
+            {
+                Name = d.Router.Name, Address = d.Router.Address, Port = d.Router.Port, UserName = d.Router.UserName,
+                CertificateThumbprint = d.Router.CertificateThumbprint,
+            },
             Email = new EmailSettingsForm { Enabled = d.Email.Enabled, From = d.Email.From, FromName = d.Email.FromName, AppBaseUrl = d.Email.AppBaseUrl },
         };
     }

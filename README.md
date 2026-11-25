@@ -27,7 +27,9 @@ Specs, approved mockups and module prompts are in `Netora-MikroTik-Manager-V2-Pr
 | Approvals | `/approvals`, `/approvals/{id}` | Create, Disable, Enable, Change Plan and Terminate requests; only Managers decide; approval emails |
 | Users and Settings | `/users`, `/settings` (Managers), `/profile` (everyone) | Add, edit, enable/disable and password reset with a temporary password; router details (password encrypted) and email settings with a test email; own name, email, theme and password |
 
-Not connected yet: the MikroTik router. Approved changes are saved in the database and shown as "Not sent to router". The other sidebar pages are not built yet.
+| MikroTik | `/settings`, `/approvals/{id}`, `/customers/{id}`, `/pppoe/import` | Approved changes sent to the router with Retry, live status and Configuration Mismatch on the customer profile, Test Connection, Import. Uses a mock router until `Router:Mode` is `RouterOS` |
+
+The other sidebar pages are not built yet.
 
 ## Prerequisites
 
@@ -146,6 +148,13 @@ Non-secret settings live in `appsettings.json`, with overrides in `appsettings.D
 
 `App_Data/` is git-ignored.
 
+| `Router:Mode` | `Mock` (empty in Production) | `Mock` = a pretend router for development, `RouterOS` = the real MikroTik over the RouterOS 7 REST API. Required: the API does not start while it is empty |
+| `Router:TimeoutSeconds` | `10` | Timeout per router call |
+| `Router:Mock:StatePath` | `App_Data/mock-router.json` | Where the mock keeps its secrets. Delete the file to reset the mock (it reseeds from the customers) |
+| `Router:Mock:FailWrites` | `false` | Makes every mock change fail, to try failures and Retry |
+
+The router address, port, API user, password and optional certificate fingerprint are entered on the **Settings** page (password stored encrypted), not in appsettings.
+
 ### WebUI (`src/Netora.WebUI`)
 
 | Setting | Default | Purpose |
@@ -194,6 +203,23 @@ dotnet user-secrets set "Email:Smtp:Password" "<16-character app password>" --pr
 ```
 
 Port 465 with `"UseSsl": true` also works with Gmail. Use the same address in `From` as in `UserName`. Gmail replaces any other sender address unless it is set up as a "Send mail as" alias in that Gmail account. To stop sending, set `"Enabled": false`; nothing else needs to change.
+
+## MikroTik router
+
+Netora talks to one RouterOS 7 router over the REST API (HTTPS). It never deletes a PPP secret.
+
+- **When the router is contacted:** when a Manager approves a request (create, disable, enable, change plan, terminate), when Retry is pressed on a request, when a customer profile is opened or refreshed (live status and Configuration Mismatch), on Test Connection, and on an Import scan. There is no background synchronization.
+- **What is sent:** the account's current Netora values (desired state), so sending twice changes nothing more. A request that already succeeded is never sent again. A failed send is recorded on the request with the error; the approval stands and a Manager can retry.
+- **Safety:** creation never overwrites a secret Netora did not create (Netora marks its own secrets with `[netora:NET-0000]` in the comment). Mismatches are shown, never fixed automatically.
+- **Mock mode:** `Router:Mode = Mock` uses a pretend router. Every page that shows router data says "Mock router".
+
+### Connecting a real router
+
+1. On the router, create a dedicated user for Netora (a group with `read`, `write`, `api` and `rest-api` policies), enable the `www-ssl` service with a certificate, and restrict `www-ssl` to the Netora server's address (`/ip service set www-ssl address=<server-ip>/32`).
+2. In `src/Netora.WebApi/appsettings.json` (or `appsettings.Production.json` on the server), set `"Router": { "Mode": "RouterOS" }` and restart the API.
+3. In **Settings**, enter the router address, HTTPS port, API user name and password. If the router uses a self-signed certificate, also enter its SHA-256 fingerprint; only that exact certificate is then accepted.
+4. Press **Test Connection**. It should report the router's identity and RouterOS version.
+5. Use **PPPoE Management > Import Accounts** to bring existing secrets into Netora (scan, review, confirm).
 
 ## Run locally
 

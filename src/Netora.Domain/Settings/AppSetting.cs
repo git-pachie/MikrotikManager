@@ -26,6 +26,10 @@ public static class AppSettingKeys
     public const string RouterPort = "Router.Port";
     public const string RouterUserName = "Router.UserName";
     public const string RouterPassword = "Router.Password";
+    public const string RouterCertificateThumbprint = "Router.CertificateThumbprint";
+    public const string RouterLastTestAtUtc = "Router.LastTestAtUtc";
+    public const string RouterLastTestOk = "Router.LastTestOk";
+    public const string RouterLastTestMessage = "Router.LastTestMessage";
 
     public const string EmailEnabled = "Email.Enabled";
     public const string EmailFrom = "Email.From";

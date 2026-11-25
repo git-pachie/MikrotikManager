@@ -74,6 +74,26 @@ public static class DependencyInjection
         services.AddScoped<Netora.Application.Users.IUserAdminService, UserAdminService>();
         services.AddScoped<Netora.Application.Users.IProfileService, ProfileService>();
         services.AddScoped<Netora.Application.Settings.ISettingsService, Settings.SettingsService>();
-        return services;
+
+        // Router (module 09). Router:Mode must be set explicitly, so mock results can never pass for a real router.
+        var routerMode = configuration[$"{Router.RouterOptions.SectionName}:Mode"];
+        if (!string.Equals(routerMode, Router.RouterOptions.MockMode, StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(routerMode, Router.RouterOptions.RouterOsMode, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                "Router:Mode is not set. Set it to \"RouterOS\" to use the real MikroTik router, or \"Mock\" for the pretend router (appsettings.json).");
+        }
+        services.Configure<Router.RouterOptions>(configuration.GetSection(Router.RouterOptions.SectionName));
+        services.AddScoped<Router.IRouterConnectionProvider, Router.RouterConnectionProvider>();
+        services.AddScoped<Router.RouterOsRestClient>();
+        services.AddSingleton<Router.MockRouterClient>();
+        services.AddScoped<Netora.Application.Router.IRouterClient>(sp =>
+            string.Equals(routerMode, Router.RouterOptions.RouterOsMode, StringComparison.OrdinalIgnoreCase)
+                ? sp.GetRequiredService<Router.RouterOsRestClient>()
+                : sp.GetRequiredService<Router.MockRouterClient>());
+        services.AddScoped<Netora.Application.Router.IRouterProvisioner, Router.RouterProvisioner>();
+        services.AddScoped<Netora.Application.Router.IRouterStatusService, Router.RouterStatusService>();
+        services.AddScoped<Netora.Application.Router.IPppoeImportService, Router.PppoeImportService>();
+        services.AddScoped<Netora.Application.Router.IRouterConnectionTester, Router.RouterConnectionTester>();        return services;
     }
 }

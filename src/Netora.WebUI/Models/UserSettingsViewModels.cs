@@ -96,6 +96,7 @@ public sealed class RouterSettingsForm
     [StringLength(100)] public string? UserName { get; set; }
     [StringLength(128)] [DataType(DataType.Password)] public string? NewPassword { get; set; }
     public bool ClearPassword { get; set; }
+    [StringLength(120)] public string? CertificateThumbprint { get; set; }
 }
 
 public sealed class EmailSettingsForm

@@ -4,7 +4,10 @@
     ViewData["Title"] = "Customer Details";
     ViewData["Nav"] = "customers";
     var d = Model.Data;
-    const string notConnected = "Not available. Live router data is connected with the MikroTik module.";
+    const string notConnected = "PPPoE session logs come with the Diagnostics module.";
+    var rs = Model.Router;
+    var secretText = rs is null ? "Not checked" : !rs.Reachable ? "Router not reachable" : rs.SecretFound ? rs.SecretState! : rs.SecretExpected ? "Missing on router" : "Not created yet";
+    var liveText = rs is null ? "Not checked" : !rs.Reachable ? "Unknown" : rs.SessionActive ? "Online" : "Offline";
 }
 <div class="detail-breadcrumb"><a href="/customers">Customers</a><span> / </span><strong>Customer Details</strong></div>
 <div class="heading">
@@ -72,8 +75,8 @@
     </div>
     <div class="detail-live">
         <span class="detail-live-label">PPPoE Connection</span>
-        <div class="detail-live-value">Not checked</div>
-        <span class="detail-secondary">Live router status is not connected yet</span>
+        <div class="detail-live-value">@if (rs is { SessionActive: true }) { <span class="online-dot"></span> }@liveText</div>
+        <span class="detail-secondary">@(rs is null ? "Router status could not be checked" : rs.Reachable ? $"{(rs.AssignedIp is null ? "No session" : rs.AssignedIp)} • checked {CustomerDetailViewModel.DateTime(rs.CheckedAtUtc)}{(rs.Mode == "Mock" ? " • Mock router" : "")}" : "Router not reachable")</span>
     </div>
 </section>
 @if (d.Status == "PendingApproval")
@@ -81,8 +84,8 @@
     <div class="detail-alert">This customer is waiting for Manager approval. No PPPoE account exists on the router yet. The request is listed under <a href="/approvals">Pending Approvals</a> and on the <a href="/pppoe/@d.Id">PPPoE account</a> page.</div>
 }
 <div class="detail-kpis">
-    <div class="panel detail-kpi"><span>PPPoE Username</span><strong>@d.PppoeUsername</strong><small>Router account status not checked</small></div>
-    <div class="panel detail-kpi"><span>Internet Plan</span><strong>@d.PlanName</strong><small>PPP profile mapping not set up</small></div>
+    <div class="panel detail-kpi"><span>PPPoE Username</span><strong>@d.PppoeUsername</strong><small>Router secret: @secretText</small></div>
+    <div class="panel detail-kpi"><span>Internet Plan</span><strong>@d.PlanName</strong><small>@(rs is { Reachable: true, SecretFound: true } ? $"Router profile: {rs.ActualProfile ?? "not set"}" : "Used as the PPP profile on the router")</small></div>
     <div class="panel detail-kpi"><span>NAP Assignment</span><strong>@d.NapBox</strong><small>@(d.NapBox == "UNKNOWN" ? "Not mapped to a NAP box" : "Assigned subscriber")</small></div>
     <div class="panel detail-kpi"><span>ONU Serial</span><strong>@CustomerDetailViewModel.OrDash(d.OnuSerial)</strong><small>@(string.IsNullOrWhiteSpace(d.OnuSerial) ? "No device recorded" : "Current device record")</small></div>
 </div>
@@ -120,7 +123,7 @@
                     <div><span>PPPoE Username</span><strong>@d.PppoeUsername</strong></div>
                     <div><span>NAP Box</span><strong>@d.NapBox</strong></div>
                     <div><span>ONU Record</span><strong>@(string.IsNullOrWhiteSpace(d.OnuSerial) ? "Not recorded" : "Recorded")</strong></div>
-                    <div><span>PPPoE Secret</span><strong>Not checked</strong></div>
+                    <div><span>PPPoE Secret</span><strong>@secretText</strong></div>
                     <div><span>Last Updated</span><strong>@(d.UpdatedAtUtc is { } u ? CustomerDetailViewModel.DateTime(u) : "Never edited")</strong></div>
                 </div>
             </section>
@@ -138,17 +141,45 @@
         <div class="section-head">
             <h3>PPPoE Connection &amp; Diagnostics</h3>
             <div class="heading-actions"><a class="btn btn-outline" href="/pppoe/@d.Id"><svg class="icon"><use href="#wifi" /></svg>PPPoE Account</a>
-            <button type="button" class="btn btn-outline" disabled title="Live router refresh is available with the MikroTik module"><svg class="icon"><use href="#refresh" /></svg>Refresh Status</button></div>
+            <a class="btn btn-outline" href="/customers/@d.Id" title="Checks the router again"><svg class="icon"><use href="#refresh" /></svg>Refresh Status</a></div>
         </div>
-        <div class="detail-alert">Live RouterOS data is not connected yet, so the connection values below are not available. This is not a confirmed offline state.</div>
+        @if (rs is null)
+        {
+            <div class="detail-alert">The router status could not be checked because the Web API did not answer. This is not a confirmed offline state.</div>
+        }
+        else if (!rs.Reachable)
+        {
+            <div class="form-alert" role="alert">Router not reachable: @rs.Error This is not a confirmed offline state.</div>
+        }
+        else
+        {
+            <div class="detail-alert">Checked @CustomerDetailViewModel.DateTime(rs.CheckedAtUtc) on the @(rs.Mode == "Mock" ? "mock router (no real MikroTik; values are fictional)" : "MikroTik router"). Checked only when this page is opened or refreshed.</div>
+        }
         <div class="detail-fields detail-diagnostics">
             <div><span>PPPoE Username</span><strong>@d.PppoeUsername</strong></div>
-            <div><span>Secret Status</span><strong>Not checked</strong></div>
-            <div><span>Session Status</span><strong>Not available</strong></div>
-            <div><span>Assigned IP</span><strong>Not available</strong></div>
+            <div><span>Secret Status</span><strong>@secretText</strong></div>
+            <div><span>Session Status</span><strong>@(rs is { Reachable: true } ? (rs.SessionActive ? $"Online{(rs.Uptime is null ? "" : $", up {rs.Uptime}")}" : "Offline") : "Unknown")</strong></div>
+            <div><span>Assigned IP</span><strong>@(rs?.AssignedIp ?? "—")</strong></div>
             <div><span>Profile (expected)</span><strong>@d.PlanName</strong></div>
-            <div><span>Configuration Mismatch</span><strong>Not checked</strong></div>
+            <div><span>Profile (router)</span><strong>@(rs?.ActualProfile ?? "—")</strong></div>
+            <div><span>Configuration Mismatch</span><strong>@(rs is not { Reachable: true } ? "Not checked" : rs.Mismatches.Count == 0 ? "None" : $"{rs.Mismatches.Count} difference(s)")</strong></div>
         </div>
+        @if (rs is { Reachable: true, Mismatches.Count: > 0 })
+        {
+            <h3 class="detail-subtitle">Configuration Mismatch</h3>
+            <div class="table-scroll">
+                <table class="customers-table detail-table">
+                    <thead><tr><th>Setting</th><th>Netora (SQL Server)</th><th>Router</th></tr></thead>
+                    <tbody>
+                        @foreach (var m in rs.Mismatches)
+                        {
+                            <tr><td>@m.Field</td><td>@m.Expected</td><td>@m.Actual</td></tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <p class="module-note">Nothing is changed automatically on either side. Correct the record in Netora, or the router, or send the account again through an approved request.</p>
+        }
         <h3 class="detail-subtitle">Recent PPPoE Logs</h3>
         <div class="detail-empty">@notConnected</div>
     </div>

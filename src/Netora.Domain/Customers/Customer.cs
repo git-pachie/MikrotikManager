@@ -108,6 +108,9 @@ public sealed class Customer
     /// <summary>Whether the router matches the database. Always NotSent until module 09 connects a router.</summary>
     public RouterSyncStatus RouterSyncStatus { get; set; } = RouterSyncStatus.NotSent;
 
+    /// <summary>RouterOS ".id" of the PPP secret (for example "*1A"), set once the secret is created or imported.</summary>
+    public string? RouterSecretId { get; set; }
+
     /// <summary>"NET-0001" style label shown in the UI. Derived from the ID, so it needs no extra column.</summary>
     public static string DisplayId(int id) => $"NET-{id:D4}";
 }

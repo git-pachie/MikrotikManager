@@ -1,10 +1,11 @@
+@model PppoeImportViewModel
 @{
     ViewData["Title"] = "Import PPPoE";
     ViewData["Nav"] = "pppoe";
-    const string noRouter = "Needs the MikroTik router connection, which is not set up yet";
+    var scan = Model.Scan;
 }
-@* Layout from approved-mockups/import-pppoe.html. Scanning needs a RouterOS 7 router (module 09), so the actions are
-   shown disabled and the preview is empty instead of showing sample secrets. *@
+@* Layout from approved-mockups/import-pppoe.html. The scan runs only when a Manager presses Scan Router (04.04),
+   and nothing is imported until the selection is confirmed. *@
 <div class="heading">
     <div class="heading-title">
         <svg class="icon"><use href="#users" /></svg>
@@ -15,19 +16,76 @@
     </div>
     <div class="heading-actions"><a class="btn btn-outline" href="/pppoe">PPPoE Management</a></div>
 </div>
+@if (TempData[Netora.WebUI.Controllers.CustomersController.ToastKey] is string toast)
+{
+    <div class="form-success" role="status">@toast</div>
+}
+@if (TempData[Netora.WebUI.Controllers.CustomersController.ErrorKey] is string toastError)
+{
+    <div class="form-alert" role="alert">@toastError</div>
+}
+@if (Model.Error is not null)
+{
+    <div class="form-alert" role="alert">@Model.Error</div>
+}
+
 <section class="panel module-panel">
-    <div class="module-head"><h2>Import Options</h2></div>
+    <div class="module-head">
+        <h2>Import Options</h2>
+        @if (scan is not null)
+        {
+            <span class="pill @(scan.Mode == "Mock" ? "pending" : "active")">@(scan.Mode == "Mock" ? "Mock router" : "RouterOS")</span>
+        }
+    </div>
     <div class="module-fields">
-        <label>Router<select disabled><option>No router configured</option></select></label>
+        <label>Router<select disabled><option>Router saved in Settings</option></select></label>
         <label>Duplicate Handling<select disabled><option>Skip existing usernames</option></select></label>
     </div>
     <div class="module-actions">
-        <button type="button" class="btn btn-primary" disabled title="@noRouter">Scan Router</button>
-        <button type="button" class="btn btn-outline" disabled title="@noRouter">Confirm Import</button>
+        <form method="post" action="/pppoe/import/scan">
+            @Html.AntiForgeryToken()
+            <button type="submit" class="btn btn-primary" disabled="@(!Model.IsManager)" title="@(Model.IsManager ? null : "Only Managers can import")">Scan Router</button>
+        </form>
+        <button type="submit" form="importForm" class="btn btn-outline" disabled="@(scan is not { NewCount: > 0 })">Confirm Import</button>
     </div>
-    <p class="module-note">The scan is on-demand only. Import preserves router settings; new records are assigned UNKNOWN NAP until reviewed. Scanning becomes available once a MikroTik RouterOS 7 router is connected.</p>
+    <p class="module-note">The scan is on-demand only. Import preserves router settings; new records are assigned UNKNOWN NAP until reviewed. Usernames already in Netora are skipped and never overwritten.</p>
 </section>
+
 <section class="panel module-panel">
-    <div class="module-head"><h2>Preview</h2></div>
-    <div class="detail-empty">No scan yet. PPPoE secrets found on the router will be listed here for review before anything is imported.</div>
+    <div class="module-head"><h2>Preview</h2>@if (scan is not null) { <span class="detail-secondary">@scan.Items.Count secret(s) on the router, @scan.NewCount new</span> }</div>
+    @if (scan is null)
+    {
+        <div class="detail-empty">No scan yet. PPPoE secrets found on the router will be listed here for review before anything is imported.</div>
+    }
+    else if (scan.Items.Count == 0)
+    {
+        <div class="detail-empty">The router has no PPP secrets.</div>
+    }
+    else
+    {
+        <form id="importForm" method="post" action="/pppoe/import" data-confirm="Import the selected accounts into Netora?">
+            @Html.AntiForgeryToken()
+            <div class="table-scroll">
+                <table class="customers-table all-table">
+                    <thead><tr><th>Select</th><th>PPPoE Username</th><th>Profile</th><th>Existing SQL Record</th><th>NAP Assignment</th></tr></thead>
+                    <tbody>
+                        @foreach (var i in scan.Items)
+                        {
+                            var isNew = i.State == "New";
+                            <tr>
+                                <td><input type="checkbox" name="names" value="@i.Name" checked="@isNew" disabled="@(!isNew)" aria-label="Import @i.Name"></td>
+                                <td>@i.Name @if (i.Disabled) { <span class="pill disabled">Disabled</span> }</td>
+                                <td>@(i.Profile ?? "—")</td>
+                                <td>
+                                    @if (i.CustomerId is { } cid) { <a class="customer-link" href="/customers/@cid">@i.State</a> } else { @i.State }
+                                    @if (i.Reason is not null && !isNew) { <span class="detail-secondary"> (@i.Reason)</span> }
+                                </td>
+                                <td>@(isNew ? "UNKNOWN" : "—")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </form>
+    }
 </section>

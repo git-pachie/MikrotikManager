@@ -51,12 +51,34 @@ public class ApprovalsController(INetoraApiClient apiClient) : Controller
         if (result.Success && result.Data is { } r)
         {
             TempData[CustomersController.ToastKey] = r.Status == "Approved"
-                ? $"{ApprovalRequestId(r.Id)} approved. The change is saved; it is not sent to the router yet."
+                ? r.ProvisioningStatus switch
+                {
+                    "Succeeded" => $"{ApprovalRequestId(r.Id)} approved and sent to the router.",
+                    "Failed" => $"{ApprovalRequestId(r.Id)} approved and saved, but the router change failed. See Router below and use Retry.",
+                    _ => $"{ApprovalRequestId(r.Id)} approved. The change is saved; it is not sent to the router yet.",
+                }
                 : $"{ApprovalRequestId(r.Id)} rejected. Nothing was changed.";
         }
         else
         {
             TempData[CustomersController.ErrorKey] = "The decision was not saved. " + Message(result.Error);
+        }
+        return Redirect($"/approvals/{id}");
+    }
+
+    [HttpPost("/approvals/{id:long}/retry")]
+    public async Task<IActionResult> Retry(long id, CancellationToken cancellationToken)
+    {
+        var result = await apiClient.RetryApprovalAsync(id, cancellationToken);
+        if (result.Error?.Code == "not_found") return NotFoundPage();
+        if (result.Success && result.Data is { } r)
+        {
+            if (r.Status == "Succeeded") TempData[CustomersController.ToastKey] = $"{ApprovalRequestId(id)} sent to the router (attempt {r.Attempts}).";
+            else TempData[CustomersController.ErrorKey] = $"{ApprovalRequestId(id)} failed on the router again (attempt {r.Attempts}): {r.Error}";
+        }
+        else
+        {
+            TempData[CustomersController.ErrorKey] = "Nothing was sent. " + Message(result.Error);
         }
         return Redirect($"/approvals/{id}");
     }

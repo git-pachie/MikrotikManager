@@ -80,7 +80,7 @@
             <button type="submit" name="approve" value="true" class="btn btn-primary" disabled="@(d.ApproveBlockedReason is not null)">Approve</button>
             <button type="submit" name="approve" value="false" class="btn btn-outline">Reject</button>
         </form>
-        <p class="module-note">Approving saves the change in Netora. It is sent to MikroTik separately and tracked under Router below.</p>
+        <p class="module-note">Approving saves the change in Netora and then sends it to the @(d.RouterMode == "Mock" ? "mock router" : "MikroTik router"). The router result is tracked separately under Router below; a router failure never undoes the approval.</p>
     }
     else
     {
@@ -91,7 +91,10 @@
 <section class="panel module-panel">
     <div class="module-head">
         <h2>Router</h2>
-        <span class="pill @ApprovalLabels.ProvisioningPill(d.ProvisioningStatus)">@ApprovalLabels.Provisioning(d.ProvisioningStatus)</span>
+        <div class="detail-tags">
+            <span class="pill @(d.RouterMode == "Mock" ? "pending" : "nap")">@(d.RouterMode == "Mock" ? "Mock router" : "RouterOS")</span>
+            <span class="pill @ApprovalLabels.ProvisioningPill(d.ProvisioningStatus)">@ApprovalLabels.Provisioning(d.ProvisioningStatus)</span>
+        </div>
     </div>
     @if (d.ProvisioningStatus == "NotApplicable")
     {
@@ -104,9 +107,20 @@
             <div><span>Last attempt</span><strong>@ApprovalLabels.When(d.ProvisioningLastAttemptAtUtc)</strong></div>
             <div class="wide"><span>Last error</span><strong>@(d.ProvisioningError ?? "—")</strong></div>
         </div>
-        <div class="module-actions">
-            <button type="button" class="btn btn-outline" disabled title="Available once the MikroTik router connection is set up">Retry on Router</button>
-        </div>
-        <p class="module-note">The approved change is saved. Sending it to MikroTik, and retrying failures, is added with the router connection (module 09).</p>
+        @if (d.CanRetry)
+        {
+            <form method="post" asp-controller="Approvals" asp-action="Retry" asp-route-id="@d.Id" class="module-actions">
+                <button type="submit" class="btn btn-primary">Retry on Router</button>
+                <span class="module-note">Sends the account's current Netora values again. A change that already succeeded is never repeated.</span>
+            </form>
+        }
+        else if (d.ProvisioningStatus is "NotSent" or "Failed")
+        {
+            <p class="module-note">Waiting for a Manager to retry sending this change to the router.</p>
+        }
+        else
+        {
+            <p class="module-note">The router has this change. It will not be sent again.</p>
+        }
     }
 </section>

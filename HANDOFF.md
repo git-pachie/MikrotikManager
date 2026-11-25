@@ -104,9 +104,10 @@ Browser → Netora.WebUI (MVC, cookie session) → Netora.WebApi (JWT) → SQL S
 | 04 PPPoE | Partial (database only) | Accounts list and Edit PPPoE page. Password encrypted with Data Protection and write-only (only "set / not set" is returned). Every change is marked `RouterSyncStatus = NotSent`. **Not done:** anything on the router, Import (layout only, buttons disabled), live session data |
 | 08 Approvals | Partial | All request types (Create, Disable, Enable, Change Plan, Terminate), before/after summaries, Manager decision once, one pending request per customer, Pending Approvals page per `approvals.html`, Approval Details page (no mockup), emails (MailKit background queue, `Email:Enabled`, `UseSsl`), and a provisioning status per request. **Not done:** sending to the router and Retry (module 09). The Retry button is shown disabled |
 | 13 Settings and Users | **Completed** (router connection test waits for 09) | User Management (add, edit, role, enable/disable, temporary-password reset, last-Manager and self-change guards, sessions end on role change, deactivation and reset), My Profile (name, email, theme, own password), Settings (router details with encrypted password, email on/off and sender stored in `AppSettings`, test email, setup checklist), forced password change in WebUI and API |
+| 09 MikroTik | **Completed against the mock** (REST client not yet tried on a real router) | `IRouterClient` (RouterOS REST or mock, `Router:Mode`), provisioning after approval with Retry, live status and mismatch on the customer profile, Test Connection, Import. Code: `src/Netora.Infrastructure/Router/`, `src/Netora.Application/Router/RouterContracts.cs` |
 | 15 Testing | Partial | 98 automated tests, all passing (`ApprovalTests` 18 methods, `PppoeTests` 20, `CustomerCommandTests` 15, `CustomerAttachmentTests` 12, `CustomerListSortingTests` 5, `CustomerVisibilityTests` 5; theories expand to 98 cases) |
 
-Not started: 05 Plans, 06 NAP Boxes, 07 ONU, 09 MikroTik, 10 Diagnostics, 11 Dashboard, 12 Audit Trail and Backups, 14 Design QA, 16 Reports and Notifications, 18 Logging. Their sidebar links return 404.
+Not started: 05 Plans, 06 NAP Boxes, 07 ONU, 10 Diagnostics, 11 Dashboard, 12 Audit Trail and Backups, 14 Design QA, 16 Reports and Notifications, 18 Logging. Their sidebar links return 404.
 
 ### Pages (WebUI)
 
@@ -227,3 +228,5 @@ Before each commit:
 
 
 _Updated 2026-11-25 after module 13 (116 tests passing; migration `UsersAndSettings` applied)._
+
+_Updated 2026-11-25 after module 09 (133 tests passing; migration `RouterIntegration` applied). Next: 05 Plans and 06 NAP, then 18 Logging and 12 Audit._

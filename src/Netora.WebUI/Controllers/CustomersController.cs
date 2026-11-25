@@ -41,7 +41,11 @@ public class CustomersController(INetoraApiClient apiClient) : Controller
     {
         var result = await apiClient.GetCustomerAsync(id, cancellationToken);
         if (result.Success && result.Data is not null)
-            return View(new CustomerDetailViewModel { Data = result.Data });
+        {
+            // Checked on opening (and on Refresh, which reloads the page), never on a schedule (09.03).
+            var router = await apiClient.GetRouterStatusAsync(id, cancellationToken);
+            return View(new CustomerDetailViewModel { Data = result.Data, Router = router.Data });
+        }
 
         if (result.Error?.Code == "not_found")
         {

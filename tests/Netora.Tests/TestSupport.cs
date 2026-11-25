@@ -33,6 +33,17 @@ public sealed class RecordingNotifier : Netora.Application.Approvals.IApprovalNo
     }
 }
 
+public sealed class RecordingProvisioner : Netora.Application.Router.IRouterProvisioner
+{
+    public List<long> Calls { get; } = [];
+
+    public Task<Netora.Application.Router.ProvisioningResult> ProvisionAsync(long requestId, string actorUserId, string actorUserName, CancellationToken cancellationToken)
+    {
+        Calls.Add(requestId);
+        return Task.FromResult(new Netora.Application.Router.ProvisioningResult("NotSent", null, 0));
+    }
+}
+
 public sealed class TestDb : IDisposable
 {
     private readonly DbContextOptions<NetoraDbContext> options;
@@ -65,7 +76,11 @@ public sealed class TestDb : IDisposable
         new Netora.Infrastructure.Pppoe.ApprovalRepository(db),
         new Netora.Infrastructure.Pppoe.PppoePasswordProtector(new Microsoft.AspNetCore.DataProtection.EphemeralDataProtectionProvider()),
         Notifier,
+        Provisioner,
         NullLogger<Netora.Application.Pppoe.PppoeCommands>.Instance);
+
+    /// <summary>Router stand-in for the approval tests: records the calls and leaves requests "NotSent".</summary>
+    public RecordingProvisioner Provisioner { get; } = new();
 
     public static readonly CustomerActor Manager = new("manager-id", "manager01", IsManager: true);
     public static readonly CustomerActor Staff = new("staff-id", "staff01", IsManager: false);

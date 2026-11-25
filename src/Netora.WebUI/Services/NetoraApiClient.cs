@@ -7,6 +7,7 @@ using Netora.Application.Customers.Attachments;
 using Netora.Application.Health;
 using Netora.Application.Approvals;
 using Netora.Application.Pppoe;
+using Netora.Application.Router;
 using Netora.Application.Settings;
 using Netora.Application.Users;
 
@@ -56,7 +57,13 @@ public interface INetoraApiClient
     Task<ApiResponse<SettingsDto>> GetSettingsAsync(CancellationToken cancellationToken);
     Task<ApiResponse<SavedDto>> UpdateRouterSettingsAsync(UpdateRouterSettingsRequest request, CancellationToken cancellationToken);
     Task<ApiResponse<SavedDto>> UpdateEmailSettingsAsync(UpdateEmailSettingsRequest request, CancellationToken cancellationToken);
-    Task<ApiResponse<TestEmailResultDto>> SendTestEmailAsync(CancellationToken cancellationToken);}
+    Task<ApiResponse<TestEmailResultDto>> SendTestEmailAsync(CancellationToken cancellationToken);
+    Task<ApiResponse<RouterTestResultDto>> TestRouterAsync(CancellationToken cancellationToken);
+    Task<ApiResponse<ProvisioningResult>> RetryApprovalAsync(long requestId, CancellationToken cancellationToken);
+    Task<ApiResponse<RouterStatusDto>> GetRouterStatusAsync(int customerId, CancellationToken cancellationToken);
+    Task<ApiResponse<ImportScanDto>> ScanImportAsync(CancellationToken cancellationToken);
+    Task<ApiResponse<ImportResultDto>> ImportPppoeAsync(ImportRequest request, CancellationToken cancellationToken);
+}
 
 public sealed record PppoeChangedDto(bool Changed);
 
@@ -200,6 +207,20 @@ public sealed class NetoraApiClient(HttpClient httpClient, ILogger<NetoraApiClie
     public Task<ApiResponse<TestEmailResultDto>> SendTestEmailAsync(CancellationToken cancellationToken)
         => SendAsync<TestEmailResultDto>(HttpMethod.Post, "api/v1/settings/email/test", null, cancellationToken);
 
+    public Task<ApiResponse<RouterTestResultDto>> TestRouterAsync(CancellationToken cancellationToken)
+        => SendAsync<RouterTestResultDto>(HttpMethod.Post, "api/v1/settings/router/test", null, cancellationToken);
+
+    public Task<ApiResponse<ProvisioningResult>> RetryApprovalAsync(long requestId, CancellationToken cancellationToken)
+        => SendAsync<ProvisioningResult>(HttpMethod.Post, $"api/v1/approvals/{requestId}/retry", null, cancellationToken);
+
+    public Task<ApiResponse<RouterStatusDto>> GetRouterStatusAsync(int customerId, CancellationToken cancellationToken)
+        => SendAsync<RouterStatusDto>(HttpMethod.Get, $"api/v1/customers/{customerId}/router-status", null, cancellationToken);
+
+    public Task<ApiResponse<ImportScanDto>> ScanImportAsync(CancellationToken cancellationToken)
+        => SendAsync<ImportScanDto>(HttpMethod.Get, "api/v1/pppoe/import/scan", null, cancellationToken);
+
+    public Task<ApiResponse<ImportResultDto>> ImportPppoeAsync(ImportRequest request, CancellationToken cancellationToken)
+        => SendAsync<ImportResultDto>(HttpMethod.Post, "api/v1/pppoe/import", request, cancellationToken);
     public Task<ApiResponse<CustomerListDto>> GetCustomersAsync(CustomerListQuery query, CancellationToken cancellationToken)
     {
         var parts = new List<string> { $"page={query.Page}", $"pageSize={query.PageSize}" };

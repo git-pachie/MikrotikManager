@@ -18,6 +18,7 @@ public class PppoeTests
         new ApprovalRepository(db),
         new PppoePasswordProtector(new EphemeralDataProtectionProvider()),
         new RecordingNotifier(),
+        new RecordingProvisioner(),
         NullLogger<PppoeCommands>.Instance);
 
     private static async Task<PppoeDetailDto> Get(TestDb t, int id, bool manager = true)

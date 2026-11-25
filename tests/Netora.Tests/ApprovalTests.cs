@@ -11,7 +11,7 @@ namespace Netora.Tests;
 
 public class ApprovalTests
 {
-    private static ApprovalCommands Approvals(TestDb t, NetoraDbContext db) => new(new ApprovalRepository(db), t.PppoeCommands(db));
+    private static ApprovalCommands Approvals(TestDb t, NetoraDbContext db) => new(new ApprovalRepository(db), t.PppoeCommands(db), t.Provisioner);
 
     private static async Task<ApprovalRequest> PendingOf(TestDb t, int customerId)
     {

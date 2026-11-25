@@ -67,5 +67,25 @@ public sealed class ApprovalsController(IApprovalQueries queries, IApprovalComma
             : PppoeResultMapper.Failure(this, result, "Approval request not found.");
     }
 
+    /// <summary>Manager only: sends an approved change whose router status is Not sent or Failed again. Never repeats a success.</summary>
+    [HttpPost("{requestId:long}/retry")]
+    [Authorize(Policy = Policies.ManagerOnly)]
+    [ProducesResponseType(typeof(ApiResponse<Netora.Application.Router.ProvisioningResult>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<Netora.Application.Router.ProvisioningResult>), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Retry(long requestId, CancellationToken cancellationToken)
+    {
+        var userId = User.FindFirst(NetoraClaimTypes.Subject)?.Value ?? string.Empty;
+        var actor = new CustomerActor(userId, User.FindFirst(NetoraClaimTypes.Name)?.Value ?? userId, IsManager);
+        var result = await commands.RetryAsync(requestId, actor, cancellationToken);
+        var t = HttpContext.TraceIdentifier;
+        return result.Outcome switch
+        {
+            RetryOutcome.Ok => Ok(ApiResponse<Netora.Application.Router.ProvisioningResult>.Ok(result.Result!, t)),
+            RetryOutcome.NotFound => NotFound(ApiResponse<object>.Fail("not_found", "Approval request not found.", t)),
+            RetryOutcome.Forbidden => StatusCode(StatusCodes.Status403Forbidden, ApiResponse<object>.Fail("forbidden", "Only Managers can retry.", t)),
+            _ => Conflict(ApiResponse<object>.Fail("not_retryable", "Only approved requests that were not sent or failed on the router can be retried.", t)),
+        };
+    }
+
     private bool IsManager => User.IsInRole(Roles.Manager);
 }

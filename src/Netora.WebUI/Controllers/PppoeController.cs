@@ -33,7 +33,35 @@ public class PppoeController(INetoraApiClient apiClient) : Controller
     }
 
     [HttpGet("/pppoe/import")]
-    public IActionResult Import() => View();
+    public IActionResult Import() => View(new PppoeImportViewModel { IsManager = User.IsInRole("Manager") });
+
+    /// <summary>On-demand scan (04.04): reads the router's secrets and shows them for review. Imports nothing.</summary>
+    [HttpPost("/pppoe/import/scan")]
+    public async Task<IActionResult> Scan(CancellationToken cancellationToken)
+    {
+        var model = new PppoeImportViewModel { IsManager = User.IsInRole("Manager") };
+        if (!model.IsManager) return View("Import", model with { Error = "Only Managers can scan the router and import accounts." });
+        var result = await apiClient.ScanImportAsync(cancellationToken);
+        return View("Import", result.Success
+            ? model with { Scan = result.Data }
+            : model with { Error = "The router could not be scanned. " + (result.Error?.Message ?? "Unexpected error.") });
+    }
+
+    /// <summary>Imports only the secrets the Manager ticked after a scan.</summary>
+    [HttpPost("/pppoe/import")]
+    public async Task<IActionResult> ConfirmImport(List<string>? names, CancellationToken cancellationToken)
+    {
+        if (!User.IsInRole("Manager")) return View("Import", new PppoeImportViewModel { Error = "Only Managers can import accounts." });
+        var result = await apiClient.ImportPppoeAsync(new Netora.Application.Router.ImportRequest(names ?? []), cancellationToken);
+        if (result.Success && result.Data is { } r)
+        {
+            TempData[CustomersController.ToastKey] = $"{r.Imported} account(s) imported with NAP UNKNOWN, {r.Skipped} skipped." +
+                (r.Messages.Count > 0 ? " " + string.Join(" ", r.Messages.Take(10)) : string.Empty);
+            return Redirect(r.Imported > 0 ? "/customers?nap=UNKNOWN" : "/pppoe/import");
+        }
+        TempData[CustomersController.ErrorKey] = "Nothing was imported. " + (result.Error?.Message ?? "Unexpected error.");
+        return Redirect("/pppoe/import");
+    }
 
     [HttpGet("/pppoe/{id:int}")]
     public async Task<IActionResult> Edit(int id, CancellationToken cancellationToken)

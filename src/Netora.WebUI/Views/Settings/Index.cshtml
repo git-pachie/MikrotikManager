@@ -34,14 +34,17 @@
 }
 
 <section class="panel module-panel">
-    <div class="module-head"><h2>MikroTik Connection</h2></div>
+    <div class="module-head">
+        <h2>MikroTik Connection</h2>
+        <span class="pill @(d.Router.Mode == "Mock" ? "pending" : "nap")" title="Router:Mode in appsettings">@(d.Router.Mode == "Mock" ? "Mock router" : "RouterOS")</span>
+    </div>
     <form method="post" action="/settings/router" novalidate>
         @Html.AntiForgeryToken()
         <div class="module-fields">
             <label>Router Name<input asp-for="Router.Name" maxlength="100" placeholder="Primary MikroTik"><span asp-validation-for="Router.Name" class="field-error"></span></label>
             <label>Router Address<input asp-for="Router.Address" maxlength="253" placeholder="192.168.88.1 or router.example"><span asp-validation-for="Router.Address" class="field-error"></span></label>
             <label>API Protocol<select disabled><option>HTTPS REST API</option></select></label>
-            <label>Connection Status<input value="Not tested" readonly></label>
+            <label>Connection Status<input value="@(d.Router.ConnectionStatus switch { "Connected" => "Connected", "Failed" => "Failed", _ => "Not tested" })@(d.Router.LastTestedAtUtc is { } lt ? $" ({UserLabels.When(lt)})" : "")" readonly></label>
             <label>HTTPS Port<input asp-for="Router.Port" type="number" min="1" max="65535"><span asp-validation-for="Router.Port" class="field-error"></span></label>
             <label>API User Name<input asp-for="Router.UserName" maxlength="100" autocomplete="off" placeholder="netora-api"><span asp-validation-for="Router.UserName" class="field-error"></span></label>
             <label>API Password
@@ -49,17 +52,22 @@
                        placeholder="@(d.Router.PasswordSet ? "Saved. Leave blank to keep it" : "Not set")">
                 <span asp-validation-for="Router.NewPassword" class="field-error"></span>
             </label>
+            <label class="span-2">HTTPS Certificate Fingerprint (SHA-256, optional)<input asp-for="Router.CertificateThumbprint" maxlength="120" autocomplete="off" placeholder="Only for a self-signed router certificate: 64 hex characters"><span asp-validation-for="Router.CertificateThumbprint" class="field-error"></span></label>
         </div>
         <div class="module-actions">
             <button type="submit" class="btn btn-primary">Save Router Settings</button>
-            <button type="button" class="btn btn-outline" disabled title="Connecting to the router is added with the MikroTik module (09)">Test Connection</button>
+            <button type="submit" class="btn btn-outline" formaction="/settings/router/test" formnovalidate title="Uses the saved settings. Save first if you changed anything.">Test Connection</button>
             @if (d.Router.PasswordSet)
             {
                 <label class="module-check"><input asp-for="Router.ClearPassword" type="checkbox"> Remove the saved password</label>
             }
         </div>
     </form>
-    <p class="module-note">The password is stored encrypted on the server and is never shown again. Netora does not connect to the router yet; connecting, testing and sending approved changes come with the MikroTik module.</p>
+    @if (d.Router.LastTestMessage is not null)
+    {
+        <p class="module-note">Last test: @d.Router.LastTestMessage</p>
+    }
+    <p class="module-note">The password is stored encrypted on the server and is never shown again. Use a dedicated RouterOS user with only the rights Netora needs, and allow the REST API (www-ssl service) only from this server's address.@(d.Router.Mode == "Mock" ? " Router:Mode is Mock: router actions go to a pretend router, not to a MikroTik." : "")</p>
 </section>
 
 <section class="panel module-panel" id="notifications">
