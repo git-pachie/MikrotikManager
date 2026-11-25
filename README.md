@@ -60,6 +60,9 @@ The WebUI only needs the API address, which is set in `src/Netora.WebUI/appsetti
 | `Jwt__SigningKey` | WebApi | Token signing key, 32+ characters |
 | `Bootstrap__ManagerUserName`, `Bootstrap__ManagerPassword` | WebApi | First Manager, first start only |
 | `Api__BaseUrl` | WebUI | Absolute URL of the Web API |
+| `Attachments__StoragePath` | WebApi | Folder for customer attachments, outside any web root (required; empty in Production settings) |
+| `Attachments__MaxFileSizeBytes` | WebApi | Upload limit in bytes (default 10485760 = 10 MB) |
+| `DataProtection__KeysPath` | WebApi | Folder for the keys that encrypt stored PPPoE passwords (required). Back it up with the database: without these keys the stored passwords cannot be decrypted. |
 
 ## Run locally
 

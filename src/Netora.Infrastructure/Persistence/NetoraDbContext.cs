@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using Netora.Domain.Approvals;
 using Netora.Domain.Customers;
 using Netora.Domain.Security;
 using Netora.Infrastructure.Identity;
@@ -13,6 +14,7 @@ public sealed class NetoraDbContext(DbContextOptions<NetoraDbContext> options)
     public DbSet<Customer> Customers => Set<Customer>();
     public DbSet<CustomerActivity> CustomerActivities => Set<CustomerActivity>();
     public DbSet<CustomerAttachment> CustomerAttachments => Set<CustomerAttachment>();
+    public DbSet<ApprovalRequest> ApprovalRequests => Set<ApprovalRequest>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

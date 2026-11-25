@@ -1,0 +1,146 @@
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Netora.Application.Auth;
+using Netora.Application.Common;
+using Netora.Application.Customers;
+using Netora.Application.Pppoe;
+using Netora.Infrastructure.Identity;
+
+namespace Netora.WebApi.Controllers;
+
+/// <summary>
+/// PPPoE accounts (module 04), stored in the database. Nothing here contacts MikroTik: approved changes are marked
+/// "not sent to router" until module 09 adds the router connection.
+/// </summary>
+[ApiController]
+[Route("api/v1/pppoe")]
+public sealed class PppoeController(IPppoeQueries queries, IPppoeCommands commands) : ControllerBase
+{
+    /// <summary>PPPoE accounts with counts. Accounts of Manager-only customers are excluded for Staff, also from the counts.</summary>
+    [HttpGet]
+    [ProducesResponseType(typeof(ApiResponse<PppoeListDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> List([FromQuery] string? search, [FromQuery] string? state,
+        [FromQuery] int page = 1, [FromQuery] int pageSize = 10, [FromQuery] string? sortBy = null,
+        [FromQuery] string? sortDir = null, CancellationToken cancellationToken = default)
+    {
+        var column = sortBy?.Trim().ToLowerInvariant();
+        var query = new PppoeListQuery(
+            Trim(search, 100),
+            PppoeListQuery.States.Contains(state?.Trim().ToLowerInvariant()) ? state!.Trim().ToLowerInvariant() : null,
+            page, pageSize,
+            PppoeListQuery.SortColumns.Contains(column) ? column : null,
+            string.Equals(sortDir, "desc", StringComparison.OrdinalIgnoreCase) ? "desc" : "asc");
+        var result = await queries.ListAsync(query, IsManager, cancellationToken);
+        return Ok(ApiResponse<PppoeListDto>.Ok(result, HttpContext.TraceIdentifier));
+    }
+
+    /// <summary>One account. 404 both for a missing customer and for a Manager-only customer requested by Staff.</summary>
+    [HttpGet("{customerId:int}")]
+    [ProducesResponseType(typeof(ApiResponse<PppoeDetailDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<PppoeDetailDto>), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Get(int customerId, CancellationToken cancellationToken)
+    {
+        var detail = await queries.GetAsync(customerId, IsManager, cancellationToken);
+        return detail is null
+            ? NotFound(ApiResponse<PppoeDetailDto>.Fail("not_found", "PPPoE account not found.", HttpContext.TraceIdentifier))
+            : Ok(ApiResponse<PppoeDetailDto>.Ok(detail, HttpContext.TraceIdentifier));
+    }
+
+    /// <summary>
+    /// Edits PPPoE details. Rejected with 409 account_active while the account is Active (disable it first).
+    /// NewPassword is write-only: leave it empty to keep the stored password.
+    /// </summary>
+    [HttpPut("{customerId:int}")]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Update(int customerId, [FromBody] UpdatePppoeRequest request, CancellationToken cancellationToken)
+    {
+        var actor = CurrentActor();
+        if (actor is null) return Unauthenticated();
+        var result = await commands.UpdateAsync(customerId, request, actor, cancellationToken);
+        return result.Outcome switch
+        {
+            PppoeOutcome.Ok => Ok(ApiResponse<object>.Ok(new { changed = true }, HttpContext.TraceIdentifier)),
+            PppoeOutcome.NoChanges => Ok(ApiResponse<object>.Ok(new { changed = false }, HttpContext.TraceIdentifier)),
+            _ => Failure(result),
+        };
+    }
+
+    /// <summary>
+    /// Requests disabling (Operation "Disable", Active accounts) or enabling (Operation "Enable", Disabled accounts).
+    /// Staff requests wait for a Manager; a Manager's request is approved at once.
+    /// </summary>
+    [HttpPost("{customerId:int}/requests")]
+    [ProducesResponseType(typeof(ApiResponse<ApprovalRequestDto>), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ApiResponse<ApprovalRequestDto>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse<ApprovalRequestDto>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<ApprovalRequestDto>), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Submit(int customerId, [FromBody] SubmitPppoeRequest request, CancellationToken cancellationToken)
+    {
+        var actor = CurrentActor();
+        if (actor is null) return Unauthenticated();
+        var result = await commands.SubmitAsync(customerId, request, actor, cancellationToken);
+        return result.Outcome == PppoeOutcome.Ok
+            ? StatusCode(StatusCodes.Status201Created, ApiResponse<ApprovalRequestDto>.Ok(result.Request!, HttpContext.TraceIdentifier))
+            : Failure(result);
+    }
+
+    /// <summary>Manager only: approve or reject a pending request. A request can be decided once.</summary>
+    [HttpPost("{customerId:int}/requests/{requestId:long}/decision")]
+    [Authorize(Policy = Policies.ManagerOnly)]
+    [ProducesResponseType(typeof(ApiResponse<ApprovalRequestDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<ApprovalRequestDto>), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse<ApprovalRequestDto>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<ApprovalRequestDto>), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Decide(int customerId, long requestId, [FromBody] DecidePppoeRequest decision,
+        CancellationToken cancellationToken)
+    {
+        var actor = CurrentActor();
+        if (actor is null) return Unauthenticated();
+        var result = await commands.DecideAsync(customerId, requestId, decision, actor, cancellationToken);
+        return result.Outcome == PppoeOutcome.Ok
+            ? Ok(ApiResponse<ApprovalRequestDto>.Ok(result.Request!, HttpContext.TraceIdentifier))
+            : Failure(result);
+    }
+
+    private IActionResult Failure(PppoeResult result)
+    {
+        var t = HttpContext.TraceIdentifier;
+        return result.Outcome switch
+        {
+            PppoeOutcome.ValidationFailed => BadRequest(ApiResponse<object>.Fail("validation_failed", "One or more validation errors occurred.", t, result.Errors)),
+            PppoeOutcome.NotFound => NotFound(ApiResponse<object>.Fail("not_found", "PPPoE account not found.", t)),
+            PppoeOutcome.AccountActive => Conflict(ApiResponse<object>.Fail("account_active", "Disable the account first. Active accounts cannot be edited.", t)),
+            PppoeOutcome.CustomerLocked => Conflict(ApiResponse<object>.Fail("customer_locked", "Terminated customers are view-only for Staff.", t)),
+            PppoeOutcome.ServiceFieldsLocked => Conflict(ApiResponse<object>.Fail("service_fields_locked", "PPPoE Username and Internet Plan cannot be changed for a terminated account.", t, result.Errors)),
+            PppoeOutcome.DuplicatePppoeUsername => Conflict(ApiResponse<object>.Fail("duplicate_pppoe_username", "This PPPoE Username is already in use.", t, result.Errors)),
+            PppoeOutcome.Conflict => Conflict(ApiResponse<object>.Fail("concurrency_conflict", "This account was changed by someone else. Reload and try again.", t)),
+            PppoeOutcome.NotAllowedInCurrentState => Conflict(ApiResponse<object>.Fail("not_allowed_in_current_state", "This request does not fit the account's current state.", t)),
+            PppoeOutcome.RequestAlreadyPending => Conflict(ApiResponse<object>.Fail("request_already_pending", "A request for this account is already waiting for a Manager.", t)),
+            PppoeOutcome.AlreadyDecided => Conflict(ApiResponse<object>.Fail("already_decided", "This request was already approved or rejected.", t)),
+            PppoeOutcome.Forbidden => StatusCode(StatusCodes.Status403Forbidden, ApiResponse<object>.Fail("forbidden", "Only Managers can decide requests.", t)),
+            _ => throw new InvalidOperationException($"Unhandled outcome {result.Outcome}"),
+        };
+    }
+
+    private bool IsManager => User.IsInRole(Roles.Manager);
+
+    private IActionResult Unauthenticated()
+        => Unauthorized(ApiResponse<object>.Fail("unauthorized", "Authentication is required.", HttpContext.TraceIdentifier));
+
+    private CustomerActor? CurrentActor()
+    {
+        var userId = User.FindFirst(NetoraClaimTypes.Subject)?.Value;
+        if (string.IsNullOrEmpty(userId)) return null;
+        return new CustomerActor(userId, User.FindFirst(NetoraClaimTypes.Name)?.Value ?? userId, IsManager);
+    }
+
+    private static string? Trim(string? value, int max)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        value = value.Trim();
+        return value.Length > max ? value[..max] : value;
+    }
+}

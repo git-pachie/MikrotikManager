@@ -23,6 +23,11 @@ internal sealed class CustomerConfiguration : IEntityTypeConfiguration<Customer>
         builder.Property(c => c.Notes).HasMaxLength(1000);
         builder.Property(c => c.CreatedByUserId).HasMaxLength(450);
         builder.Property(c => c.UpdatedByUserId).HasMaxLength(450);
+        builder.Property(c => c.PppoePasswordProtected).HasMaxLength(1000);
+        builder.Property(c => c.PppoeRemoteAddress).HasMaxLength(45);
+        builder.Property(c => c.PppoeLocalAddress).HasMaxLength(45);
+        builder.Property(c => c.PppoeComment).HasMaxLength(200);
+        builder.Property(c => c.RouterSyncStatus).HasConversion<string>().HasMaxLength(20);
         builder.Property(c => c.ConcurrencyStamp).HasMaxLength(32).IsRequired().IsConcurrencyToken();
         builder.Property(c => c.Status).HasConversion<string>().HasMaxLength(20);
 

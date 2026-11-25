@@ -46,7 +46,7 @@
     </div>
     @if (Model.ServiceFieldsLocked)
     {
-        <p class="module-note" role="status">The PPPoE Username and Internet Plan are locked because this customer already has a PPPoE account. They change only through a Manager-approved request, which becomes available with the Approvals module.</p>
+        <p class="module-note" role="status">The PPPoE Username and Internet Plan are locked: @(Model.StatusLabel == "Terminated" ? "they are kept for history on terminated accounts." : "the PPPoE account is Active. Disable it first on the PPPoE page (needs a Manager's approval), then edit them there.")</p>
     }
     @if (Model.CanSetManagerOnly)
     {

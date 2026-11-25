@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.OpenApi.Models;
 using Netora.Application;
 using Netora.Infrastructure;
@@ -15,6 +16,15 @@ if (!builder.Environment.IsDevelopment())
 
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
+
+// Encryption keys for stored PPPoE passwords. Back up this folder with the database: without the keys the stored
+// passwords cannot be decrypted. Outside Development the folder must be configured explicitly.
+var keysPath = builder.Configuration["DataProtection:KeysPath"];
+if (string.IsNullOrWhiteSpace(keysPath))
+    throw new InvalidOperationException("DataProtection:KeysPath is not configured. Set a folder outside the web root for the encryption keys.");
+builder.Services.AddDataProtection()
+    .SetApplicationName("Netora")
+    .PersistKeysToFileSystem(new DirectoryInfo(Path.IsPathRooted(keysPath) ? keysPath : Path.Combine(builder.Environment.ContentRootPath, keysPath)));
 builder.Services.AddNetoraAuthentication();
 
 // FluentValidation in Application owns field rules, so MVC must not add implicit [Required] on non-nullable strings.

@@ -5,6 +5,17 @@ namespace Netora.Domain.Customers;
 /// can approve it. Transitions to Active, Disabled and Terminated are implemented with modules 08 (Approvals) and
 /// 09 (MikroTik), keeping the approval decision separate from router provisioning.
 /// </summary>
+/// <summary>
+/// Router provisioning state, kept separate from the approval decision (08.04). Without a router connection every
+/// account stays <see cref="NotSent"/>.
+/// </summary>
+public enum RouterSyncStatus
+{
+    NotSent = 0,
+    Synced = 1,
+    Failed = 2,
+}
+
 public enum CustomerStatus
 {
     Active = 1,
@@ -64,11 +75,38 @@ public sealed class Customer
     public bool CanBeChangedBy(bool actorIsManager) => Status != CustomerStatus.Terminated || actorIsManager;
 
     /// <summary>
-    /// Once a customer is Active, Disabled or Terminated a PPPoE account exists on the router (terminated accounts are
-    /// disabled, not deleted), so the PPPoE Username and the Internet Plan change only through a Manager-approved
-    /// request (module 08), never through a plain edit.
+    /// Agreed 2026-11-25: an Active PPPoE account must be disabled first (Manager-approved) before its PPPoE details,
+    /// including the PPPoE Username and the Internet Plan, can change. Terminated accounts keep them fixed: the
+    /// disabled secret still exists on the router and history must stay traceable.
     /// </summary>
-    public bool ServiceFieldsLocked => Status is CustomerStatus.Active or CustomerStatus.Disabled or CustomerStatus.Terminated;
+    public bool ServiceFieldsLocked => Status is CustomerStatus.Active or CustomerStatus.Terminated;
+
+    /// <summary>
+    /// Whether the PPPoE details (password, addresses, router comment, and username and plan) may be edited.
+    /// Agreed 2026-11-25: Staff and Managers, except while Active; Terminated follows <see cref="CanBeChangedBy"/>
+    /// and keeps username and plan fixed.
+    /// </summary>
+    public bool PppoeDetailsEditableBy(bool actorIsManager) => Status != CustomerStatus.Active && CanBeChangedBy(actorIsManager);
+
+    // ----- PPPoE account (module 04). Stored now, sent to MikroTik after Manager approval (modules 08/09). -----
+
+    /// <summary>
+    /// PPPoE secret password, encrypted with ASP.NET Core Data Protection. Never returned to clients; needed later to
+    /// create the secret on the router.
+    /// </summary>
+    public string? PppoePasswordProtected { get; set; }
+
+    /// <summary>Optional static remote address (RouterOS "remote-address").</summary>
+    public string? PppoeRemoteAddress { get; set; }
+
+    /// <summary>Optional local address (RouterOS "local-address").</summary>
+    public string? PppoeLocalAddress { get; set; }
+
+    /// <summary>RouterOS secret comment.</summary>
+    public string? PppoeComment { get; set; }
+
+    /// <summary>Whether the router matches the database. Always NotSent until module 09 connects a router.</summary>
+    public RouterSyncStatus RouterSyncStatus { get; set; } = RouterSyncStatus.NotSent;
 
     /// <summary>"NET-0001" style label shown in the UI. Derived from the ID, so it needs no extra column.</summary>
     public static string DisplayId(int id) => $"NET-{id:D4}";

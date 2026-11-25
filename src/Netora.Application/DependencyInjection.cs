@@ -12,6 +12,7 @@ public static class DependencyInjection
         services.AddScoped<IHealthService, HealthService>();
         services.AddScoped<Customers.ICustomerCommands, Customers.CustomerCommands>();
         services.AddScoped<Customers.Attachments.ICustomerAttachmentService, Customers.Attachments.CustomerAttachmentService>();
+        services.AddScoped<Pppoe.IPppoeCommands, Pppoe.PppoeCommands>();
         return services;
     }
 }

@@ -5,6 +5,7 @@ using Netora.Application.Common;
 using Netora.Application.Customers;
 using Netora.Application.Customers.Attachments;
 using Netora.Application.Health;
+using Netora.Application.Pppoe;
 
 namespace Netora.WebUI.Services;
 
@@ -32,7 +33,14 @@ public interface INetoraApiClient
     /// it after the body has been sent.
     /// </summary>
     Task<ApiFile> DownloadAttachmentAsync(int customerId, long attachmentId, CancellationToken cancellationToken);
+    Task<ApiResponse<PppoeListDto>> GetPppoeAccountsAsync(PppoeListQuery query, CancellationToken cancellationToken);
+    Task<ApiResponse<PppoeDetailDto>> GetPppoeAccountAsync(int customerId, CancellationToken cancellationToken);
+    Task<ApiResponse<PppoeChangedDto>> UpdatePppoeAccountAsync(int customerId, UpdatePppoeRequest request, CancellationToken cancellationToken);
+    Task<ApiResponse<ApprovalRequestDto>> SubmitPppoeRequestAsync(int customerId, SubmitPppoeRequest request, CancellationToken cancellationToken);
+    Task<ApiResponse<ApprovalRequestDto>> DecidePppoeRequestAsync(int customerId, long requestId, DecidePppoeRequest decision, CancellationToken cancellationToken);
 }
+
+public sealed record PppoeChangedDto(bool Changed);
 
 /// <summary>A streamed file from the API, or the error code when there is none.</summary>
 public sealed record ApiFile(HttpResponseMessage? Response, string? ErrorCode);
@@ -93,7 +101,28 @@ public sealed class NetoraApiClient(HttpClient httpClient, ILogger<NetoraApiClie
         }
     }
 
-        public Task<ApiResponse<CustomerListDto>> GetCustomersAsync(CustomerListQuery query, CancellationToken cancellationToken)
+        public Task<ApiResponse<PppoeListDto>> GetPppoeAccountsAsync(PppoeListQuery query, CancellationToken cancellationToken)
+    {
+        var parts = new List<string> { $"page={query.Page}", $"pageSize={query.PageSize}" };
+        if (!string.IsNullOrWhiteSpace(query.Search)) parts.Add("search=" + Uri.EscapeDataString(query.Search));
+        if (query.State is not null) parts.Add("state=" + Uri.EscapeDataString(query.State));
+        if (query.SortBy is not null) { parts.Add("sortBy=" + query.SortBy); parts.Add("sortDir=" + (query.Descending ? "desc" : "asc")); }
+        return SendAsync<PppoeListDto>(HttpMethod.Get, "api/v1/pppoe?" + string.Join("&", parts), null, cancellationToken);
+    }
+
+    public Task<ApiResponse<PppoeDetailDto>> GetPppoeAccountAsync(int customerId, CancellationToken cancellationToken)
+        => SendAsync<PppoeDetailDto>(HttpMethod.Get, $"api/v1/pppoe/{customerId}", null, cancellationToken);
+
+    public Task<ApiResponse<PppoeChangedDto>> UpdatePppoeAccountAsync(int customerId, UpdatePppoeRequest request, CancellationToken cancellationToken)
+        => SendAsync<PppoeChangedDto>(HttpMethod.Put, $"api/v1/pppoe/{customerId}", request, cancellationToken);
+
+    public Task<ApiResponse<ApprovalRequestDto>> SubmitPppoeRequestAsync(int customerId, SubmitPppoeRequest request, CancellationToken cancellationToken)
+        => SendAsync<ApprovalRequestDto>(HttpMethod.Post, $"api/v1/pppoe/{customerId}/requests", request, cancellationToken);
+
+    public Task<ApiResponse<ApprovalRequestDto>> DecidePppoeRequestAsync(int customerId, long requestId, DecidePppoeRequest decision, CancellationToken cancellationToken)
+        => SendAsync<ApprovalRequestDto>(HttpMethod.Post, $"api/v1/pppoe/{customerId}/requests/{requestId}/decision", decision, cancellationToken);
+
+    public Task<ApiResponse<CustomerListDto>> GetCustomersAsync(CustomerListQuery query, CancellationToken cancellationToken)
     {
         var parts = new List<string> { $"page={query.Page}", $"pageSize={query.PageSize}" };
         void Add(string key, string? value)

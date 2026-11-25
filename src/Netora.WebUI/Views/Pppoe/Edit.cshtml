@@ -1,0 +1,165 @@
+@model PppoeFormViewModel
+@{
+    var d = Model.Detail!;
+    ViewData["Title"] = "PPPoE " + d.PppoeUsername;
+    ViewData["Nav"] = "pppoe";
+    var formError = ViewData.ModelState[string.Empty]?.Errors.FirstOrDefault()?.ErrorMessage;
+    var pending = d.PendingRequest;
+    var readOnly = !d.CanEdit;
+    var lockService = readOnly || d.ServiceFieldsLocked;
+}
+<div class="detail-breadcrumb">
+    <a href="/pppoe">PPPoE Management</a><span> / </span><strong>@d.PppoeUsername</strong>
+</div>
+<div class="heading">
+    <div class="heading-title">
+        <svg class="icon"><use href="#wifi" /></svg>
+        <div>
+            <h1>PPPoE Account</h1>
+            <p><a class="customer-link" href="/customers/@d.CustomerId">@d.CustomerName</a> <span class="detail-dot">•</span> @d.DisplayId</p>
+        </div>
+    </div>
+    <div class="heading-actions"><a class="btn btn-outline" href="/pppoe">Back to PPPoE</a></div>
+</div>
+@if (TempData[Netora.WebUI.Controllers.CustomersController.ToastKey] is string toast)
+{
+    <div class="form-success" role="status">@toast</div>
+}
+@if (TempData[Netora.WebUI.Controllers.CustomersController.ErrorKey] is string toastError)
+{
+    <div class="form-alert" role="alert">@toastError</div>
+}
+@if (formError is not null)
+{
+    <div class="form-alert" role="alert">@formError</div>
+}
+
+<section class="panel module-panel">
+    <div class="module-head">
+        <h2>Account State</h2>
+        <div class="detail-tags">
+            <span class="pill @PppoeLabels.StatePill(d.AccountState)">@PppoeLabels.State(d.AccountState)</span>
+            <span class="pill unknown" title="Changes are sent to MikroTik once the router connection exists">Router: @PppoeLabels.Router(d.RouterSyncStatus)</span>
+        </div>
+    </div>
+
+    @if (pending is not null)
+    {
+        <div class="detail-alert" role="status">
+            <strong>@PppoeLabels.Operation(pending.Operation) requested</strong> by @pending.RequestedBy on @PppoeLabels.When(pending.RequestedAtUtc).
+            @if (!string.IsNullOrEmpty(pending.Reason)) { <span>Reason: @pending.Reason</span> }
+            @if (!Model.IsManager) { <span>Waiting for a Manager's approval.</span> }
+        </div>
+        @if (Model.IsManager)
+        {
+            <form method="post" asp-controller="Pppoe" asp-action="Decide" asp-route-id="@d.CustomerId" asp-route-requestId="@pending.Id" class="state-form">
+                <label class="state-note">Decision note (optional)<input name="note" maxlength="500" placeholder="Visible in the request history"></label>
+                <button type="submit" name="approve" value="true" class="btn btn-primary">Approve @PppoeLabels.Operation(pending.Operation)</button>
+                <button type="submit" name="approve" value="false" class="btn btn-outline">Reject</button>
+            </form>
+        }
+    }
+    else if (d.CanRequestDisable || d.CanRequestEnable)
+    {
+        var op = d.CanRequestDisable ? "Disable" : "Enable";
+        <p class="module-note">
+            @if (d.CanRequestDisable)
+            {
+                <text>This account is Active, so its PPPoE details are read-only. Disable it first to edit them.</text>
+            }
+            else
+            {
+                <text>This account is Disabled. Re-enabling it needs a Manager's approval.</text>
+            }
+            @(Model.IsManager ? " As a Manager, your request is approved at once." : " Your request goes to a Manager for approval.")
+        </p>
+        <form method="post" asp-controller="Pppoe" asp-action="Submit" asp-route-id="@d.CustomerId" class="state-form"
+              data-confirm="@(Model.IsManager ? $"{op} this account now?" : $"Send a request to {op.ToLowerInvariant()} this account?")">
+            <input type="hidden" name="operation" value="@op">
+            <label class="state-note">Reason (optional)<input name="reason" maxlength="500" placeholder="Why is this change needed?"></label>
+            <button type="submit" class="btn @(op == "Disable" ? "btn-outline" : "btn-primary")">@(Model.IsManager ? $"{op} Account" : $"Request {op}")</button>
+        </form>
+    }
+    else if (d.AccountState == "NotCreated")
+    {
+        <p class="module-note">This customer is waiting for approval, so no PPPoE account has been created on the router yet. The details below can be edited until then.</p>
+    }
+    else if (d.AccountState == "Terminated")
+    {
+        <p class="module-note">This account is terminated. The PPPoE Username and Internet Plan are kept for history.@(d.CanEdit ? "" : " Only Managers can edit terminated accounts.")</p>
+    }
+</section>
+
+<form asp-controller="Pppoe" asp-action="Edit" asp-route-id="@d.CustomerId" method="post" id="pppoeForm" novalidate>
+    <input asp-for="ConcurrencyStamp" type="hidden">
+    <section class="panel module-panel">
+        <div class="module-head"><h2>PPPoE Details</h2></div>
+        <fieldset disabled="@readOnly" class="plain-fieldset">
+            <div class="module-fields">
+                <label>PPPoE Username *<input asp-for="PppoeUsername" required maxlength="40" autocomplete="off" readonly="@lockService"><span asp-validation-for="PppoeUsername" class="field-error"></span></label>
+                @if (lockService)
+                {
+                    <label>Internet Plan (PPP profile) *<input asp-for="PlanName" readonly><span asp-validation-for="PlanName" class="field-error"></span></label>
+                }
+                else
+                {
+                    <label>Internet Plan (PPP profile) *
+                        <select asp-for="PlanName" required>
+                            @foreach (var p in Model.PlanOptions)
+                            {
+                                <option value="@p" selected="@(p == Model.PlanName)">@p</option>
+                            }
+                        </select>
+                        <span asp-validation-for="PlanName" class="field-error"></span>
+                    </label>
+                }
+                <label>@(d.PasswordSet ? "New Password" : "Password")
+                    <input asp-for="NewPassword" type="password" autocomplete="new-password" maxlength="64"
+                           placeholder="@(d.PasswordSet ? "Set. Leave blank to keep the current password" : "Not set yet")">
+                    <span asp-validation-for="NewPassword" class="field-error"></span>
+                </label>
+                <label>Router Comment<input asp-for="Comment" maxlength="200" placeholder="Optional"><span asp-validation-for="Comment" class="field-error"></span></label>
+                <label>Remote Address<input asp-for="RemoteAddress" maxlength="15" placeholder="Optional static IP, e.g. 10.0.0.25" inputmode="decimal"><span asp-validation-for="RemoteAddress" class="field-error"></span></label>
+                <label>Local Address<input asp-for="LocalAddress" maxlength="15" placeholder="Optional, e.g. 10.0.0.1" inputmode="decimal"><span asp-validation-for="LocalAddress" class="field-error"></span></label>
+            </div>
+            @if (!readOnly)
+            {
+                <div class="module-actions">
+                    <button class="btn btn-primary" type="submit">Save PPPoE Details</button>
+                    <a class="btn btn-outline" href="/pppoe/@d.CustomerId">Cancel</a>
+                </div>
+            }
+        </fieldset>
+        <p class="module-note">The password is stored encrypted and is never shown again after saving. Saved changes are sent to MikroTik after approval, once the router connection is set up.</p>
+    </section>
+</form>
+
+<section class="panel module-panel">
+    <div class="module-head"><h2>Request History</h2></div>
+    @if (d.RecentRequests.Count == 0)
+    {
+        <div class="detail-empty">No disable or enable requests yet.</div>
+    }
+    else
+    {
+        <div class="table-scroll">
+            <table class="customers-table all-table">
+                <thead><tr><th>Requested</th><th>Change</th><th>Requested By</th><th>Reason</th><th>Status</th><th>Decided By</th><th>Note</th></tr></thead>
+                <tbody>
+                    @foreach (var r in d.RecentRequests)
+                    {
+                        <tr>
+                            <td>@PppoeLabels.When(r.RequestedAtUtc)</td>
+                            <td>@PppoeLabels.Operation(r.Operation)</td>
+                            <td>@r.RequestedBy</td>
+                            <td>@(r.Reason ?? "—")</td>
+                            <td><span class="pill @(r.Status switch { "Approved" => "active", "Rejected" => "terminated", _ => "pending" })">@r.Status</span></td>
+                            <td>@(r.DecidedBy ?? "—")</td>
+                            <td>@(r.DecisionNote ?? "—")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
