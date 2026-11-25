@@ -79,16 +79,21 @@ public class PppoeController(INetoraApiClient apiClient) : Controller
     }
 
     [HttpPost("/pppoe/{id:int}/requests")]
-    public async Task<IActionResult> Submit(int id, string operation, string? reason, CancellationToken cancellationToken)
+    public async Task<IActionResult> Submit(int id, string operation, string? reason, string? targetPlan, CancellationToken cancellationToken)
     {
-        var result = await apiClient.SubmitPppoeRequestAsync(id, new SubmitPppoeRequest(operation, reason), cancellationToken);
+        var result = await apiClient.SubmitPppoeRequestAsync(id, new SubmitPppoeRequest(operation, reason, targetPlan), cancellationToken);
         if (result.Error?.Code == "not_found") return NotFoundPage();
         if (result.Success && result.Data is { } r)
         {
-            var label = PppoeLabels.Operation(r.Operation).ToLowerInvariant();
+            var requestId = Netora.Domain.Approvals.ApprovalRequest.DisplayId(r.Id);
             TempData[CustomersController.ToastKey] = r.Status == "Approved"
-                ? $"Account {label}d. Approved by you; not sent to the router yet."
-                : $"Request to {label} the account sent. A Manager must approve it.";
+                ? r.Operation switch
+                {
+                    "ChangePlan" => $"Plan changed ({requestId}, approved by you). Not sent to the router yet.",
+                    "TerminatePppoe" => $"Account terminated ({requestId}, approved by you). Not sent to the router yet.",
+                    _ => $"Account {PppoeLabels.Operation(r.Operation).ToLowerInvariant()}d ({requestId}, approved by you). Not sent to the router yet.",
+                }
+                : $"{requestId} sent: {Netora.WebUI.Models.ApprovalLabels.Operation(r.Operation).ToLowerInvariant()}. A Manager must approve it.";
         }
         else
         {

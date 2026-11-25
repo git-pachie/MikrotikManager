@@ -41,7 +41,7 @@ public static class IdentitySeeder
         {
             logger.LogWarning(
                 "No Manager account exists. Set Bootstrap:ManagerUserName and Bootstrap:ManagerPassword " +
-                "(user-secrets or environment variables) and restart to create the first Manager.");
+                "(dotnet user-secrets or appsettings.Secrets.json) and restart to create the first Manager.");
             return;
         }
 

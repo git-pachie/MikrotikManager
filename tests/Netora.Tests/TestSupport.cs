@@ -13,6 +13,26 @@ namespace Netora.Tests;
 /// Builds an isolated in-memory database per test. The in-memory provider has no unique indexes or real
 /// transactions, so duplicate-race behaviour is covered by the explicit existence check only.
 /// </summary>
+/// <summary>Records approval notices instead of emailing them. Can be told to throw, to prove emails never change outcomes.</summary>
+public sealed class RecordingNotifier : Netora.Application.Approvals.IApprovalNotifier
+{
+    public List<Netora.Application.Approvals.ApprovalNotice> Submitted { get; } = [];
+    public List<Netora.Application.Approvals.ApprovalNotice> Decided { get; } = [];
+    public bool Throw { get; set; }
+
+    public void RequestSubmitted(Netora.Application.Approvals.ApprovalNotice notice)
+    {
+        if (Throw) throw new InvalidOperationException("SMTP down");
+        Submitted.Add(notice);
+    }
+
+    public void RequestDecided(Netora.Application.Approvals.ApprovalNotice notice)
+    {
+        if (Throw) throw new InvalidOperationException("SMTP down");
+        Decided.Add(notice);
+    }
+}
+
 public sealed class TestDb : IDisposable
 {
     private readonly DbContextOptions<NetoraDbContext> options;
@@ -29,11 +49,23 @@ public sealed class TestDb : IDisposable
 
     internal CustomerQueries Queries(NetoraDbContext db) => new(db, Microsoft.Extensions.Options.Options.Create(new AttachmentOptions()));
 
+    /// <summary>Approval notices sent by the commands built from this database.</summary>
+    public RecordingNotifier Notifier { get; } = new();
+
     internal CustomerCommands Commands(NetoraDbContext db) => new(
         new CreateCustomerRequestValidator(),
         new UpdateCustomerRequestValidator(),
         new CustomerRepository(db),
+        Notifier,
         NullLogger<CustomerCommands>.Instance);
+
+    internal Netora.Application.Pppoe.PppoeCommands PppoeCommands(NetoraDbContext db) => new(
+        new Netora.Application.Pppoe.UpdatePppoeRequestValidator(),
+        new CustomerRepository(db),
+        new Netora.Infrastructure.Pppoe.ApprovalRepository(db),
+        new Netora.Infrastructure.Pppoe.PppoePasswordProtector(new Microsoft.AspNetCore.DataProtection.EphemeralDataProtectionProvider()),
+        Notifier,
+        NullLogger<Netora.Application.Pppoe.PppoeCommands>.Instance);
 
     public static readonly CustomerActor Manager = new("manager-id", "manager01", IsManager: true);
     public static readonly CustomerActor Staff = new("staff-id", "staff01", IsManager: false);

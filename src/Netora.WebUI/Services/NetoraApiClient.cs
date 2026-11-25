@@ -5,6 +5,7 @@ using Netora.Application.Common;
 using Netora.Application.Customers;
 using Netora.Application.Customers.Attachments;
 using Netora.Application.Health;
+using Netora.Application.Approvals;
 using Netora.Application.Pppoe;
 
 namespace Netora.WebUI.Services;
@@ -38,6 +39,9 @@ public interface INetoraApiClient
     Task<ApiResponse<PppoeChangedDto>> UpdatePppoeAccountAsync(int customerId, UpdatePppoeRequest request, CancellationToken cancellationToken);
     Task<ApiResponse<ApprovalRequestDto>> SubmitPppoeRequestAsync(int customerId, SubmitPppoeRequest request, CancellationToken cancellationToken);
     Task<ApiResponse<ApprovalRequestDto>> DecidePppoeRequestAsync(int customerId, long requestId, DecidePppoeRequest decision, CancellationToken cancellationToken);
+    Task<ApiResponse<ApprovalListDto>> GetApprovalsAsync(ApprovalListQuery query, CancellationToken cancellationToken);
+    Task<ApiResponse<ApprovalDetailDto>> GetApprovalAsync(long requestId, CancellationToken cancellationToken);
+    Task<ApiResponse<ApprovalRequestDto>> DecideApprovalAsync(long requestId, DecidePppoeRequest decision, CancellationToken cancellationToken);
 }
 
 public sealed record PppoeChangedDto(bool Changed);
@@ -121,6 +125,21 @@ public sealed class NetoraApiClient(HttpClient httpClient, ILogger<NetoraApiClie
 
     public Task<ApiResponse<ApprovalRequestDto>> DecidePppoeRequestAsync(int customerId, long requestId, DecidePppoeRequest decision, CancellationToken cancellationToken)
         => SendAsync<ApprovalRequestDto>(HttpMethod.Post, $"api/v1/pppoe/{customerId}/requests/{requestId}/decision", decision, cancellationToken);
+
+    public Task<ApiResponse<ApprovalListDto>> GetApprovalsAsync(ApprovalListQuery query, CancellationToken cancellationToken)
+    {
+        var parts = new List<string> { $"page={query.Page}", $"pageSize={query.PageSize}" };
+        if (query.Status is not null) parts.Add("status=" + Uri.EscapeDataString(query.Status));
+        if (query.Operation is not null) parts.Add("operation=" + Uri.EscapeDataString(query.Operation));
+        if (query.Search is not null) parts.Add("search=" + Uri.EscapeDataString(query.Search));
+        return SendAsync<ApprovalListDto>(HttpMethod.Get, "api/v1/approvals?" + string.Join("&", parts), null, cancellationToken);
+    }
+
+    public Task<ApiResponse<ApprovalDetailDto>> GetApprovalAsync(long requestId, CancellationToken cancellationToken)
+        => SendAsync<ApprovalDetailDto>(HttpMethod.Get, $"api/v1/approvals/{requestId}", null, cancellationToken);
+
+    public Task<ApiResponse<ApprovalRequestDto>> DecideApprovalAsync(long requestId, DecidePppoeRequest decision, CancellationToken cancellationToken)
+        => SendAsync<ApprovalRequestDto>(HttpMethod.Post, $"api/v1/approvals/{requestId}/decision", decision, cancellationToken);
 
     public Task<ApiResponse<CustomerListDto>> GetCustomersAsync(CustomerListQuery query, CancellationToken cancellationToken)
     {

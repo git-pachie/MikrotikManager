@@ -84,10 +84,14 @@ internal sealed class PppoeQueries(NetoraDbContext db) : IPppoeQueries
             c.PppoeComment, c.RouterSyncStatus.ToString(), c.ConcurrencyStamp,
             CanEdit: c.PppoeDetailsEditableBy(viewerIsManager),
             ServiceFieldsLocked: c.ServiceFieldsLocked,
-            CanRequestDisable: canChange && pending is null && c.Status == CustomerStatus.Active,
-            CanRequestEnable: canChange && pending is null && c.Status == CustomerStatus.Disabled,
+            CanRequestDisable: canChange && pending is null && PppoeStates.Fits(ApprovalOperation.DisablePppoe, c.Status),
+            CanRequestEnable: canChange && pending is null && PppoeStates.Fits(ApprovalOperation.EnablePppoe, c.Status),
             PendingRequest: pending is null ? null : PppoeStates.ToDto(pending),
-            RecentRequests: requests.Select(PppoeStates.ToDto).ToList());
+            RecentRequests: requests.Select(PppoeStates.ToDto).ToList(),
+            CanRequestPlanChange: canChange && pending is null && PppoeStates.Fits(ApprovalOperation.ChangePlan, c.Status),
+            CanRequestTerminate: canChange && pending is null && PppoeStates.Fits(ApprovalOperation.TerminatePppoe, c.Status),
+            // A rejected creation can be sent for approval again.
+            CanResubmitCreate: canChange && pending is null && PppoeStates.Fits(ApprovalOperation.CreatePppoe, c.Status));
     }
 
     private static IOrderedQueryable<Customer> Sort(IQueryable<Customer> source, PppoeListQuery query, IQueryable<ApprovalRequest> pending)

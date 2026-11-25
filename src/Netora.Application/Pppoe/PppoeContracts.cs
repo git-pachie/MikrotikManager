@@ -48,7 +48,10 @@ public sealed record ApprovalRequestDto(
     DateTimeOffset RequestedAtUtc,
     string? DecidedBy,
     DateTimeOffset? DecidedAtUtc,
-    string? DecisionNote);
+    string? DecisionNote,
+    string? Before = null,
+    string? After = null,
+    string ProvisioningStatus = "NotApplicable");
 
 /// <summary>Everything the Edit PPPoE page needs. The password itself is never included, only whether one is set.</summary>
 public sealed record PppoeDetailDto(
@@ -70,7 +73,10 @@ public sealed record PppoeDetailDto(
     bool CanRequestDisable,
     bool CanRequestEnable,
     ApprovalRequestDto? PendingRequest,
-    IReadOnlyList<ApprovalRequestDto> RecentRequests);
+    IReadOnlyList<ApprovalRequestDto> RecentRequests,
+    bool CanRequestPlanChange = false,
+    bool CanRequestTerminate = false,
+    bool CanResubmitCreate = false);
 
 /// <summary>Edit PPPoE form. Leave <see cref="NewPassword"/> empty to keep the current password.</summary>
 public sealed record UpdatePppoeRequest(
@@ -82,7 +88,9 @@ public sealed record UpdatePppoeRequest(
     string? Comment,
     string ConcurrencyStamp);
 
-public sealed record SubmitPppoeRequest(string Operation, string? Reason);
+/// <param name="Operation">Create, Disable, Enable, ChangePlan or Terminate.</param>
+/// <param name="TargetPlan">The new Internet Plan, required for ChangePlan.</param>
+public sealed record SubmitPppoeRequest(string Operation, string? Reason, string? TargetPlan = null);
 
 public sealed record DecidePppoeRequest(bool Approve, string? Note);
 
@@ -151,6 +159,9 @@ public enum PppoeOutcome
 
     /// <summary>The request was already approved or rejected.</summary>
     AlreadyDecided,
+
+    /// <summary>Creating the account on the router needs a PPPoE password, so approval waits until one is set.</summary>
+    PasswordRequired,
 }
 
 public sealed record PppoeResult(PppoeOutcome Outcome, IReadOnlyDictionary<string, string[]>? Errors = null,
@@ -193,6 +204,8 @@ public interface IApprovalRepository
 
     Task<ApprovalRequest?> FindAsync(int customerId, long requestId, CancellationToken cancellationToken);
 
+    Task<ApprovalRequest?> FindByIdAsync(long requestId, CancellationToken cancellationToken);
+
     /// <summary>
     /// Saves a new request, its activity lines and, when the request is approved at once, the changed customer.
     /// Returns false when another pending request was created at the same moment or the customer changed meanwhile.
@@ -216,5 +229,79 @@ public static class PppoeStates
     };
 
     public static ApprovalRequestDto ToDto(ApprovalRequest r) => new(r.Id, r.Operation.ToString(), r.Status.ToString(),
-        r.Reason, r.RequestedByUserName, r.RequestedAtUtc, r.DecidedByUserName, r.DecidedAtUtc, r.DecisionNote);
+        r.Reason, r.RequestedByUserName, r.RequestedAtUtc, r.DecidedByUserName, r.DecidedAtUtc, r.DecisionNote,
+        r.Before, r.After, r.ProvisioningStatus.ToString());
+
+    /// <summary>Operation names accepted by the API, mapped to the stored operation.</summary>
+    public static readonly IReadOnlyDictionary<string, ApprovalOperation> OperationNames =
+        new Dictionary<string, ApprovalOperation>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Create"] = ApprovalOperation.CreatePppoe,
+            ["Disable"] = ApprovalOperation.DisablePppoe,
+            ["Enable"] = ApprovalOperation.EnablePppoe,
+            ["ChangePlan"] = ApprovalOperation.ChangePlan,
+            ["Terminate"] = ApprovalOperation.TerminatePppoe,
+        };
+
+    public static bool TryParseOperation(string? value, out ApprovalOperation operation)
+    {
+        operation = default;
+        return value is not null && OperationNames.TryGetValue(value.Trim(), out operation);
+    }
+
+    /// <summary>Account states a request applies to (checked when it is submitted and again when it is approved).</summary>
+    public static bool Fits(ApprovalOperation operation, CustomerStatus status) => operation switch
+    {
+        ApprovalOperation.CreatePppoe => status == CustomerStatus.PendingApproval,
+        ApprovalOperation.DisablePppoe => status == CustomerStatus.Active,
+        ApprovalOperation.EnablePppoe => status == CustomerStatus.Disabled,
+        // Disabled accounts can be edited directly, so a plan change request is only needed while Active.
+        ApprovalOperation.ChangePlan => status == CustomerStatus.Active,
+        ApprovalOperation.TerminatePppoe => status is CustomerStatus.Active or CustomerStatus.Disabled,
+        _ => false,
+    };
+
+    /// <summary>Why approving would be refused now, or null. Used when deciding and by the Approval Details page.</summary>
+    public static PppoeOutcome? ApproveBlocker(ApprovalRequest approval, Customer customer)
+    {
+        if (!Fits(approval.Operation, customer.Status)) return PppoeOutcome.NotAllowedInCurrentState;
+        if (approval.Operation == ApprovalOperation.ChangePlan
+            && string.Equals(approval.TargetPlanName, customer.PlanName, StringComparison.Ordinal))
+            return PppoeOutcome.NotAllowedInCurrentState;
+        if (approval.Operation == ApprovalOperation.CreatePppoe && customer.PppoePasswordProtected is null)
+            return PppoeOutcome.PasswordRequired;
+        return null;
+    }
+
+    /// <summary>The "after" summary of a create request: what the router account will be.</summary>
+    public static string CreateSummary(Customer c) => $"Enabled, username {c.PppoeUsername}, plan {c.PlanName}";
+
+    /// <summary>New request with its before and after summaries. Status is Pending.</summary>
+    public static ApprovalRequest NewRequest(Customer customer, ApprovalOperation operation, string? reason,
+        string? targetPlan, CustomerActor actor, DateTimeOffset now)
+    {
+        var state = AccountState(customer.Status);
+        var (before, after) = operation switch
+        {
+            ApprovalOperation.CreatePppoe => ("Not created", CreateSummary(customer)),
+            ApprovalOperation.DisablePppoe => (state, "Disabled"),
+            ApprovalOperation.EnablePppoe => (state, "Enabled"),
+            ApprovalOperation.ChangePlan => ($"Plan {customer.PlanName}", $"Plan {targetPlan}"),
+            ApprovalOperation.TerminatePppoe => (state, "Terminated"),
+            _ => (state, state),
+        };
+        return new ApprovalRequest
+        {
+            CustomerId = customer.Id,
+            Operation = operation,
+            Reason = reason,
+            Before = before,
+            After = after,
+            TargetPlanName = targetPlan,
+            RequestedByUserId = actor.UserId,
+            RequestedByUserName = actor.UserName,
+            RequestedAtUtc = now,
+            ProvisioningStatus = ProvisioningStatus.NotApplicable,
+        };
+    }
 }

@@ -6,6 +6,8 @@ using Netora.Application.Customers;
 using Netora.Application.Pppoe;
 using Netora.Infrastructure.Identity;
 
+using Netora.WebApi.Infrastructure;
+
 namespace Netora.WebApi.Controllers;
 
 /// <summary>
@@ -69,8 +71,9 @@ public sealed class PppoeController(IPppoeQueries queries, IPppoeCommands comman
     }
 
     /// <summary>
-    /// Requests disabling (Operation "Disable", Active accounts) or enabling (Operation "Enable", Disabled accounts).
-    /// Staff requests wait for a Manager; a Manager's request is approved at once.
+    /// Requests a change that needs a Manager's approval. Operation: "Disable" (Active), "Enable" (Disabled),
+    /// "ChangePlan" with TargetPlan (Active), "Terminate" (Active or Disabled) or "Create" (resubmit a rejected creation).
+    /// Staff requests wait for a Manager; a Manager's request is approved at once, except Create, which always waits.
     /// </summary>
     [HttpPost("{customerId:int}/requests")]
     [ProducesResponseType(typeof(ApiResponse<ApprovalRequestDto>), StatusCodes.Status201Created)]
@@ -105,25 +108,7 @@ public sealed class PppoeController(IPppoeQueries queries, IPppoeCommands comman
             : Failure(result);
     }
 
-    private IActionResult Failure(PppoeResult result)
-    {
-        var t = HttpContext.TraceIdentifier;
-        return result.Outcome switch
-        {
-            PppoeOutcome.ValidationFailed => BadRequest(ApiResponse<object>.Fail("validation_failed", "One or more validation errors occurred.", t, result.Errors)),
-            PppoeOutcome.NotFound => NotFound(ApiResponse<object>.Fail("not_found", "PPPoE account not found.", t)),
-            PppoeOutcome.AccountActive => Conflict(ApiResponse<object>.Fail("account_active", "Disable the account first. Active accounts cannot be edited.", t)),
-            PppoeOutcome.CustomerLocked => Conflict(ApiResponse<object>.Fail("customer_locked", "Terminated customers are view-only for Staff.", t)),
-            PppoeOutcome.ServiceFieldsLocked => Conflict(ApiResponse<object>.Fail("service_fields_locked", "PPPoE Username and Internet Plan cannot be changed for a terminated account.", t, result.Errors)),
-            PppoeOutcome.DuplicatePppoeUsername => Conflict(ApiResponse<object>.Fail("duplicate_pppoe_username", "This PPPoE Username is already in use.", t, result.Errors)),
-            PppoeOutcome.Conflict => Conflict(ApiResponse<object>.Fail("concurrency_conflict", "This account was changed by someone else. Reload and try again.", t)),
-            PppoeOutcome.NotAllowedInCurrentState => Conflict(ApiResponse<object>.Fail("not_allowed_in_current_state", "This request does not fit the account's current state.", t)),
-            PppoeOutcome.RequestAlreadyPending => Conflict(ApiResponse<object>.Fail("request_already_pending", "A request for this account is already waiting for a Manager.", t)),
-            PppoeOutcome.AlreadyDecided => Conflict(ApiResponse<object>.Fail("already_decided", "This request was already approved or rejected.", t)),
-            PppoeOutcome.Forbidden => StatusCode(StatusCodes.Status403Forbidden, ApiResponse<object>.Fail("forbidden", "Only Managers can decide requests.", t)),
-            _ => throw new InvalidOperationException($"Unhandled outcome {result.Outcome}"),
-        };
-    }
+    private IActionResult Failure(PppoeResult result) => PppoeResultMapper.Failure(this, result);
 
     private bool IsManager => User.IsInRole(Roles.Manager);
 

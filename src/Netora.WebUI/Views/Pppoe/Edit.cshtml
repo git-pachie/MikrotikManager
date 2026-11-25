@@ -46,47 +46,94 @@
     @if (pending is not null)
     {
         <div class="detail-alert" role="status">
-            <strong>@PppoeLabels.Operation(pending.Operation) requested</strong> by @pending.RequestedBy on @PppoeLabels.When(pending.RequestedAtUtc).
+            <strong>@ApprovalLabels.Operation(pending.Operation) requested</strong> by @pending.RequestedBy on @PppoeLabels.When(pending.RequestedAtUtc)
+            (<a href="/approvals/@pending.Id">@Netora.Domain.Approvals.ApprovalRequest.DisplayId(pending.Id)</a>).
             @if (!string.IsNullOrEmpty(pending.Reason)) { <span>Reason: @pending.Reason</span> }
             @if (!Model.IsManager) { <span>Waiting for a Manager's approval.</span> }
+            @if (pending.Operation == "CreatePppoe" && !d.PasswordSet) { <span>Set a PPPoE password below before it can be approved.</span> }
         </div>
         @if (Model.IsManager)
         {
             <form method="post" asp-controller="Pppoe" asp-action="Decide" asp-route-id="@d.CustomerId" asp-route-requestId="@pending.Id" class="state-form">
                 <label class="state-note">Decision note (optional)<input name="note" maxlength="500" placeholder="Visible in the request history"></label>
-                <button type="submit" name="approve" value="true" class="btn btn-primary">Approve @PppoeLabels.Operation(pending.Operation)</button>
+                <button type="submit" name="approve" value="true" class="btn btn-primary"
+                        disabled="@(pending.Operation == "CreatePppoe" && !d.PasswordSet)">Approve @PppoeLabels.Operation(pending.Operation)</button>
                 <button type="submit" name="approve" value="false" class="btn btn-outline">Reject</button>
             </form>
         }
     }
-    else if (d.CanRequestDisable || d.CanRequestEnable)
+    else
     {
-        var op = d.CanRequestDisable ? "Disable" : "Enable";
-        <p class="module-note">
-            @if (d.CanRequestDisable)
+        var managerNote = Model.IsManager ? " As a Manager, your request is approved at once." : " Your request goes to a Manager for approval.";
+        @if (d.CanRequestDisable || d.CanRequestEnable)
+        {
+            var op = d.CanRequestDisable ? "Disable" : "Enable";
+            <p class="module-note">
+                @if (d.CanRequestDisable)
+                {
+                    <text>This account is Active, so its PPPoE details are read-only. Disable it first to edit them, or request a plan change below.</text>
+                }
+                else
+                {
+                    <text>This account is Disabled. Re-enabling it needs a Manager's approval.</text>
+                }
+                @managerNote
+            </p>
+            <form method="post" asp-controller="Pppoe" asp-action="Submit" asp-route-id="@d.CustomerId" class="state-form"
+                  data-confirm="@(Model.IsManager ? $"{op} this account now?" : $"Send a request to {op.ToLowerInvariant()} this account?")">
+                <input type="hidden" name="operation" value="@op">
+                <label class="state-note">Reason (optional)<input name="reason" maxlength="500" placeholder="Why is this change needed?"></label>
+                <button type="submit" class="btn @(op == "Disable" ? "btn-outline" : "btn-primary")">@(Model.IsManager ? $"{op} Account" : $"Request {op}")</button>
+            </form>
+        }
+        @if (d.CanRequestPlanChange)
+        {
+            var otherPlans = Model.PlanOptions.Where(p => p != d.PlanName).ToList();
+            <h3 class="detail-subtitle">Change Plan</h3>
+            @if (otherPlans.Count == 0)
             {
-                <text>This account is Active, so its PPPoE details are read-only. Disable it first to edit them.</text>
+                <p class="module-note">No other plan is available yet. Plans come from the Internet Plans module.</p>
             }
             else
             {
-                <text>This account is Disabled. Re-enabling it needs a Manager's approval.</text>
+                <form method="post" asp-controller="Pppoe" asp-action="Submit" asp-route-id="@d.CustomerId" class="state-form"
+                      data-confirm="@(Model.IsManager ? "Change the plan now?" : "Send a plan change request?")">
+                    <input type="hidden" name="operation" value="ChangePlan">
+                    <label class="state-note">New Internet Plan
+                        <select name="targetPlan" required>
+                            @foreach (var p in otherPlans) { <option value="@p">@p</option> }
+                        </select>
+                    </label>
+                    <label class="state-note">Reason (optional)<input name="reason" maxlength="500" placeholder="Why is the plan changing?"></label>
+                    <button type="submit" class="btn btn-primary">@(Model.IsManager ? "Change Plan" : "Request Plan Change")</button>
+                </form>
+                <p class="module-note">Current plan: @d.PlanName.@managerNote</p>
             }
-            @(Model.IsManager ? " As a Manager, your request is approved at once." : " Your request goes to a Manager for approval.")
-        </p>
-        <form method="post" asp-controller="Pppoe" asp-action="Submit" asp-route-id="@d.CustomerId" class="state-form"
-              data-confirm="@(Model.IsManager ? $"{op} this account now?" : $"Send a request to {op.ToLowerInvariant()} this account?")">
-            <input type="hidden" name="operation" value="@op">
-            <label class="state-note">Reason (optional)<input name="reason" maxlength="500" placeholder="Why is this change needed?"></label>
-            <button type="submit" class="btn @(op == "Disable" ? "btn-outline" : "btn-primary")">@(Model.IsManager ? $"{op} Account" : $"Request {op}")</button>
-        </form>
-    }
-    else if (d.AccountState == "NotCreated")
-    {
-        <p class="module-note">This customer is waiting for approval, so no PPPoE account has been created on the router yet. The details below can be edited until then.</p>
-    }
-    else if (d.AccountState == "Terminated")
-    {
-        <p class="module-note">This account is terminated. The PPPoE Username and Internet Plan are kept for history.@(d.CanEdit ? "" : " Only Managers can edit terminated accounts.")</p>
+        }
+        @if (d.CanRequestTerminate)
+        {
+            <h3 class="detail-subtitle">Terminate Account</h3>
+            <form method="post" asp-controller="Pppoe" asp-action="Submit" asp-route-id="@d.CustomerId" class="state-form"
+                  data-confirm="@(Model.IsManager ? "Terminate this account now? Its history is kept." : "Send a request to terminate this account?")">
+                <input type="hidden" name="operation" value="Terminate">
+                <label class="state-note">Reason (optional)<input name="reason" maxlength="500" placeholder="Why is the account ending?"></label>
+                <button type="submit" class="btn btn-outline">@(Model.IsManager ? "Terminate Account" : "Request Termination")</button>
+            </form>
+            <p class="module-note">Termination keeps the customer, the PPPoE details and all history.@managerNote</p>
+        }
+        @if (d.CanResubmitCreate)
+        {
+            <p class="module-note">The request to create this PPPoE account was rejected. Fix the details below if needed, then send it for approval again. Creation always waits for a Manager's review.</p>
+            <form method="post" asp-controller="Pppoe" asp-action="Submit" asp-route-id="@d.CustomerId" class="state-form">
+                <input type="hidden" name="operation" value="Create">
+                <label class="state-note">Reason (optional)<input name="reason" maxlength="500" placeholder="What changed since the rejection?"></label>
+                <button type="submit" class="btn btn-primary">Send for Approval Again</button>
+            </form>
+        }
+        else if (d.AccountState == "Terminated")
+        {
+            <p class="module-note">This account is terminated. The PPPoE Username and Internet Plan are kept for history.@(d.CanEdit ? "" : " Only Managers can edit terminated accounts.")</p>
+        }
     }
 </section>
 
@@ -138,19 +185,20 @@
     <div class="module-head"><h2>Request History</h2></div>
     @if (d.RecentRequests.Count == 0)
     {
-        <div class="detail-empty">No disable or enable requests yet.</div>
+        <div class="detail-empty">No requests yet.</div>
     }
     else
     {
         <div class="table-scroll">
             <table class="customers-table all-table">
-                <thead><tr><th>Requested</th><th>Change</th><th>Requested By</th><th>Reason</th><th>Status</th><th>Decided By</th><th>Note</th></tr></thead>
+                <thead><tr><th>Request</th><th>Requested</th><th>Change</th><th>Requested By</th><th>Reason</th><th>Status</th><th>Decided By</th><th>Note</th></tr></thead>
                 <tbody>
                     @foreach (var r in d.RecentRequests)
                     {
                         <tr>
+                            <td><a class="customer-link" href="/approvals/@r.Id">@Netora.Domain.Approvals.ApprovalRequest.DisplayId(r.Id)</a></td>
                             <td>@PppoeLabels.When(r.RequestedAtUtc)</td>
-                            <td>@PppoeLabels.Operation(r.Operation)</td>
+                            <td>@ApprovalLabels.Operation(r.Operation)</td>
                             <td>@r.RequestedBy</td>
                             <td>@(r.Reason ?? "—")</td>
                             <td><span class="pill @(r.Status switch { "Approved" => "active", "Rejected" => "terminated", _ => "pending" })">@r.Status</span></td>

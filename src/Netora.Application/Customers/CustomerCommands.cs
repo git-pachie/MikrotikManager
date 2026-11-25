@@ -1,5 +1,8 @@
 using FluentValidation;
 using Microsoft.Extensions.Logging;
+using Netora.Application.Approvals;
+using Netora.Application.Pppoe;
+using Netora.Domain.Approvals;
 using Netora.Domain.Customers;
 
 namespace Netora.Application.Customers;
@@ -8,6 +11,7 @@ internal sealed class CustomerCommands(
     IValidator<CreateCustomerRequest> createValidator,
     IValidator<UpdateCustomerRequest> updateValidator,
     ICustomerRepository repository,
+    IApprovalNotifier notifier,
     ILogger<CustomerCommands> logger) : ICustomerCommands
 {
     public async Task<CreateCustomerResult> CreateAsync(CreateCustomerRequest request, CustomerActor actor,
@@ -48,12 +52,24 @@ internal sealed class CustomerCommands(
         };
 
         var activity = NewActivity(actor, "CustomerCreated", "Submitted for approval", now);
-        if (await repository.AddAsync(customer, activity, cancellationToken) != CustomerSaveResult.Saved)
+
+        // The PPPoE account is created only after a Manager approves this request (08.01). It always waits,
+        // also when a Manager adds the customer.
+        var creationRequest = PppoeStates.NewRequest(customer, ApprovalOperation.CreatePppoe, null, null, actor, now);
+        if (await repository.AddAsync(customer, activity, creationRequest, cancellationToken) != CustomerSaveResult.Saved)
             return DuplicateOnCreate();
 
         // Log IDs only, never names, phone numbers or addresses (18-logging.md).
-        logger.LogInformation("CustomerCreated CustomerId={CustomerId} ActorUserId={ActorUserId} Status={Status}",
-            customer.Id, actor.UserId, customer.Status);
+        logger.LogInformation("CustomerCreated CustomerId={CustomerId} RequestId={RequestId} ActorUserId={ActorUserId} Status={Status}",
+            customer.Id, creationRequest.Id, actor.UserId, customer.Status);
+        try
+        {
+            notifier.RequestSubmitted(ApprovalNotice.From(creationRequest));
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "ApprovalNotificationFailed RequestId={RequestId}", creationRequest.Id);
+        }
         return new CreateCustomerResult(CreateCustomerOutcome.Created, customer.Id);
     }
 

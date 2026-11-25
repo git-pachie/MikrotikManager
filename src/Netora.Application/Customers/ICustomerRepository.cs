@@ -24,8 +24,11 @@ public interface ICustomerRepository
     /// </summary>
     Task<Customer?> FindForUpdateAsync(int id, bool includeManagerOnly, CancellationToken cancellationToken);
 
-    /// <summary>Saves a new customer and its first activity line together, or neither.</summary>
-    Task<CustomerSaveResult> AddAsync(Customer customer, CustomerActivity activity, CancellationToken cancellationToken);
+    /// <summary>
+    /// Saves a new customer, its first activity line and its PPPoE creation request together, or none of them.
+    /// </summary>
+    Task<CustomerSaveResult> AddAsync(Customer customer, CustomerActivity activity, Domain.Approvals.ApprovalRequest creationRequest,
+        CancellationToken cancellationToken);
 
     /// <summary>
     /// Saves an edited customer and its activity line together. <paramref name="expectedStamp"/> is the

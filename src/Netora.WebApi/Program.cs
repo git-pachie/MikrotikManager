@@ -7,6 +7,9 @@ using Netora.WebApi.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Secrets come from user-secrets (Development) or appsettings.Secrets.json next to the app (any environment).
+builder.AddSecretsFile();
+
 // Structured (JSON) console logs outside Development. File logging is module 18.
 if (!builder.Environment.IsDevelopment())
 {

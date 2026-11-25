@@ -17,6 +17,9 @@ internal sealed class ApprovalRepository(NetoraDbContext db) : IApprovalReposito
     public Task<ApprovalRequest?> FindAsync(int customerId, long requestId, CancellationToken cancellationToken)
         => db.ApprovalRequests.FirstOrDefaultAsync(r => r.Id == requestId && r.CustomerId == customerId, cancellationToken);
 
+    public Task<ApprovalRequest?> FindByIdAsync(long requestId, CancellationToken cancellationToken)
+        => db.ApprovalRequests.AsNoTracking().FirstOrDefaultAsync(r => r.Id == requestId, cancellationToken);
+
     public async Task<bool> AddAsync(ApprovalRequest request, Customer? changedCustomer, string? expectedCustomerStamp,
         IEnumerable<CustomerActivity> activity, CancellationToken cancellationToken)
     {

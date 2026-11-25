@@ -19,16 +19,19 @@ internal sealed class CustomerRepository(NetoraDbContext db) : ICustomerReposito
     public Task<Customer?> FindForUpdateAsync(int id, bool includeManagerOnly, CancellationToken cancellationToken)
         => db.Customers.FirstOrDefaultAsync(c => c.Id == id && (includeManagerOnly || !c.IsManagerOnly), cancellationToken);
 
-    public async Task<CustomerSaveResult> AddAsync(Customer customer, CustomerActivity activity, CancellationToken cancellationToken)
+    public async Task<CustomerSaveResult> AddAsync(Customer customer, CustomerActivity activity,
+        Domain.Approvals.ApprovalRequest creationRequest, CancellationToken cancellationToken)
     {
-        // The activity needs the new customer's ID, so both rows are written in one transaction.
+        // The activity and the request need the new customer's ID, so all rows are written in one transaction.
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         db.Customers.Add(customer);
         try
         {
             await db.SaveChangesAsync(cancellationToken);
             activity.CustomerId = customer.Id;
+            creationRequest.CustomerId = customer.Id;
             db.CustomerActivities.Add(activity);
+            db.ApprovalRequests.Add(creationRequest);
             await db.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return CustomerSaveResult.Saved;

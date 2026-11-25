@@ -20,8 +20,8 @@ public static class DependencyInjection
         {
             throw new InvalidOperationException(
                 $"Connection string 'ConnectionStrings:{ConnectionStringName}' is not configured. " +
-                "Set it with user-secrets in Development or an environment variable " +
-                $"(ConnectionStrings__{ConnectionStringName}) elsewhere. Never commit it.");
+                "Set it with dotnet user-secrets, or in appsettings.Secrets.json next to the Web API " +
+                "(see appsettings.Secrets.example.json). Never commit it.");
         }
 
         services.AddDbContext<NetoraDbContext>(options =>
@@ -63,6 +63,12 @@ public static class DependencyInjection
         services.AddScoped<Netora.Application.Pppoe.IPppoeQueries, Pppoe.PppoeQueries>();
         services.AddScoped<Netora.Application.Pppoe.IApprovalRepository, Pppoe.ApprovalRepository>();
         services.AddSingleton<Netora.Application.Pppoe.IPppoePasswordProtector, Pppoe.PppoePasswordProtector>();
+
+        services.AddScoped<Netora.Application.Approvals.IApprovalQueries, Approvals.ApprovalQueries>();
+        services.Configure<Approvals.EmailOptions>(configuration.GetSection(Approvals.EmailOptions.SectionName));
+        services.AddSingleton<Approvals.ApprovalEmailNotifier>();
+        services.AddSingleton<Netora.Application.Approvals.IApprovalNotifier>(sp => sp.GetRequiredService<Approvals.ApprovalEmailNotifier>());
+        services.AddHostedService<Approvals.ApprovalEmailDispatcher>();
         return services;
     }
 }

@@ -71,3 +71,12 @@ a.action-btn,a.text-action{text-decoration:none}
 @media(max-width:800px){.pppoe-filters{grid-template-columns:repeat(2,minmax(0,1fr))}}
 /* Edit PPPoE page (no approved mockup): built from the approved form, panel and button styles. */
 .state-form{display:flex;align-items:flex-end;gap:11px;flex-wrap:wrap;margin-top:12px}.state-note{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:500;flex:1 1 280px;min-width:0}.state-note input{height:40px;border:1px solid #bfcee5;border-radius:7px;padding:0 12px;background:var(--surface);color:var(--ink);font-weight:400}.plain-fieldset{border:0;margin:0;padding:0;min-width:0}
+/* Implementation addition (module 08): Pending Approvals filter and link-based pager, same look as the mockup pager buttons. */
+.approval-filter{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.approval-filter select,.approval-filter input{height:40px;border:1px solid #bfcee5;border-radius:7px;background:var(--surface);color:var(--ink);padding:0 12px}
+.approval-filter input{width:230px}
+.approval-filter .btn{min-height:40px;height:40px}
+.pager a.pager-link{min-width:34px;height:33px;border-radius:6px;background:var(--surface);border:1px solid var(--border);color:var(--ink);display:inline-grid;place-items:center;text-decoration:none;padding:0 6px}
+.pager a.pager-link.active{background:var(--blue);color:#fff;border-color:var(--blue)}
+.approval-head{flex-wrap:wrap}
+@media(max-width:800px){.approval-filter{width:100%}.approval-filter input{flex:1 1 160px;width:auto}}

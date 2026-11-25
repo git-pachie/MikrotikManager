@@ -1,0 +1,112 @@
+@model ApprovalDetailViewModel
+@{
+    var d = Model.Detail;
+    var operation = ApprovalLabels.Operation(d.Operation);
+    ViewData["Title"] = d.DisplayId + " " + operation;
+    ViewData["Nav"] = "approvals";
+}
+<div class="detail-breadcrumb">
+    <a href="/approvals">Pending Approvals</a><span> / </span><strong>@d.DisplayId</strong>
+</div>
+<div class="heading">
+    <div class="heading-title">
+        <svg class="icon"><use href="#clipboard" /></svg>
+        <div>
+            <h1>@d.DisplayId: @operation</h1>
+            <p><a class="customer-link" href="/customers/@d.CustomerId">@d.CustomerName</a> <span class="detail-dot">•</span> @d.CustomerDisplayId <span class="detail-dot">•</span> @d.PppoeUsername</p>
+        </div>
+    </div>
+    <div class="heading-actions">
+        <a class="btn btn-outline" href="/pppoe/@d.CustomerId">PPPoE Account</a>
+        <a class="btn btn-outline" href="/approvals">Back to Approvals</a>
+    </div>
+</div>
+@if (TempData[Netora.WebUI.Controllers.CustomersController.ToastKey] is string toast)
+{
+    <div class="form-success" role="status">@toast</div>
+}
+@if (TempData[Netora.WebUI.Controllers.CustomersController.ErrorKey] is string error)
+{
+    <div class="form-alert" role="alert">@error</div>
+}
+
+<section class="panel module-panel">
+    <div class="module-head">
+        <h2>Request</h2>
+        <span class="pill @ApprovalLabels.StatusPill(d.Status)">@d.Status</span>
+    </div>
+    <div class="detail-fields">
+        <div><span>Operation</span><strong>@operation</strong></div>
+        <div><span>Requested By</span><strong>@d.RequestedBy</strong></div>
+        <div><span>Submitted</span><strong>@ApprovalLabels.When(d.RequestedAtUtc)</strong></div>
+        <div><span>Reason</span><strong>@(d.Reason ?? "—")</strong></div>
+        <div><span>Before</span><strong>@(d.Before ?? "—")</strong></div>
+        <div><span>@(d.Status == "Pending" ? "After approval" : "After")</span><strong>@(d.After ?? "—")</strong></div>
+    </div>
+</section>
+
+<section class="panel module-panel">
+    <div class="module-head"><h2>Customer</h2></div>
+    <div class="detail-fields">
+        <div><span>Customer</span><strong><a class="customer-link" href="/customers/@d.CustomerId">@d.CustomerName</a> (@d.CustomerDisplayId)</strong></div>
+        <div><span>Account</span><strong>@PppoeLabels.State(d.AccountState)</strong></div>
+        <div><span>PPPoE Username</span><strong>@d.PppoeUsername</strong></div>
+        <div><span>Internet Plan</span><strong>@d.PlanName</strong></div>
+        <div><span>PPPoE Password</span><strong>@(d.PasswordSet ? "Set" : "Not set")</strong></div>
+        <div><span>Visibility</span><strong>@(d.IsManagerOnly ? "Managers only" : "All staff")</strong></div>
+    </div>
+</section>
+
+<section class="panel module-panel">
+    <div class="module-head"><h2>Decision</h2></div>
+    @if (d.Status != "Pending")
+    {
+        <div class="detail-fields">
+            <div><span>Decision</span><strong>@d.Status</strong></div>
+            <div><span>Decided By</span><strong>@(d.DecidedBy ?? "—")</strong></div>
+            <div><span>Decided</span><strong>@ApprovalLabels.When(d.DecidedAtUtc)</strong></div>
+            <div><span>Note</span><strong>@(d.DecisionNote ?? "—")</strong></div>
+        </div>
+    }
+    else if (d.CanDecide)
+    {
+        @if (d.ApproveBlockedReason is not null)
+        {
+            <div class="detail-alert" role="status">@d.ApproveBlockedReason</div>
+        }
+        <form method="post" asp-controller="Approvals" asp-action="Decide" asp-route-id="@d.Id" class="state-form"
+              data-confirm="Record this decision for @d.DisplayId? It cannot be changed afterwards.">
+            <label class="state-note">Decision note (optional)<input name="note" maxlength="500" placeholder="Visible to the requester and in the history"></label>
+            <button type="submit" name="approve" value="true" class="btn btn-primary" disabled="@(d.ApproveBlockedReason is not null)">Approve</button>
+            <button type="submit" name="approve" value="false" class="btn btn-outline">Reject</button>
+        </form>
+        <p class="module-note">Approving saves the change in Netora. It is sent to MikroTik separately and tracked under Router below.</p>
+    }
+    else
+    {
+        <p class="module-note">Waiting for a Manager to approve or reject this request.</p>
+    }
+</section>
+
+<section class="panel module-panel">
+    <div class="module-head">
+        <h2>Router</h2>
+        <span class="pill @ApprovalLabels.ProvisioningPill(d.ProvisioningStatus)">@ApprovalLabels.Provisioning(d.ProvisioningStatus)</span>
+    </div>
+    @if (d.ProvisioningStatus == "NotApplicable")
+    {
+        <p class="module-note">@(d.Status == "Rejected" ? "This request was rejected, so nothing is sent to the router." : "Nothing is sent to the router before a Manager approves the request.")</p>
+    }
+    else
+    {
+        <div class="detail-fields">
+            <div><span>Attempts</span><strong>@d.ProvisioningAttempts</strong></div>
+            <div><span>Last attempt</span><strong>@ApprovalLabels.When(d.ProvisioningLastAttemptAtUtc)</strong></div>
+            <div class="wide"><span>Last error</span><strong>@(d.ProvisioningError ?? "—")</strong></div>
+        </div>
+        <div class="module-actions">
+            <button type="button" class="btn btn-outline" disabled title="Available once the MikroTik router connection is set up">Retry on Router</button>
+        </div>
+        <p class="module-note">The approved change is saved. Sending it to MikroTik, and retrying failures, is added with the router connection (module 09).</p>
+    }
+</section>

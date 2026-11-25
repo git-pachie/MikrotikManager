@@ -19,6 +19,11 @@ internal sealed class ApprovalRequestConfiguration : IEntityTypeConfiguration<Ap
         builder.Property(r => r.DecidedByUserId).HasMaxLength(450);
         builder.Property(r => r.DecidedByUserName).HasMaxLength(256);
         builder.Property(r => r.DecisionNote).HasMaxLength(500);
+        builder.Property(r => r.Before).HasMaxLength(300);
+        builder.Property(r => r.After).HasMaxLength(300);
+        builder.Property(r => r.TargetPlanName).HasMaxLength(100);
+        builder.Property(r => r.ProvisioningStatus).HasConversion<string>().HasMaxLength(20);
+        builder.Property(r => r.ProvisioningError).HasMaxLength(500);
 
         builder.HasOne<Customer>().WithMany().HasForeignKey(r => r.CustomerId).OnDelete(DeleteBehavior.NoAction);
         builder.HasIndex(r => new { r.Status, r.RequestedAtUtc });

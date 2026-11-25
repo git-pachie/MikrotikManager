@@ -12,7 +12,7 @@ public sealed class JwtOptions
     [Required]
     public string Audience { get; set; } = string.Empty;
 
-    /// <summary>HMAC-SHA256 signing key. Secret: user-secrets in Development, environment variable elsewhere.</summary>
+    /// <summary>HMAC-SHA256 signing key. Secret: dotnet user-secrets or appsettings.Secrets.json, never appsettings.json.</summary>
     [Required, MinLength(32)]
     public string SigningKey { get; set; } = string.Empty;
 

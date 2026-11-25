@@ -117,6 +117,9 @@ public static class PppoeLabels
     {
         "DisablePppoe" => "Disable",
         "EnablePppoe" => "Enable",
+        "CreatePppoe" => "Create",
+        "ChangePlan" => "Change Plan",
+        "TerminatePppoe" => "Terminate",
         _ => operation ?? string.Empty,
     };
 

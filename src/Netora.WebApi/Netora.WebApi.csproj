@@ -17,6 +17,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Secrets are never copied by build or publish; create appsettings.Secrets.json by hand on each machine. -->
+    <Content Update="appsettings.Secrets.json;appsettings.Secrets.example.json" CopyToOutputDirectory="Never" CopyToPublishDirectory="Never" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Netora.Application\Netora.Application.csproj" />
     <ProjectReference Include="..\Netora.Infrastructure\Netora.Infrastructure.csproj" />
   </ItemGroup>

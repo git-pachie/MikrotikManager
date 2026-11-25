@@ -13,6 +13,7 @@ public static class DependencyInjection
         services.AddScoped<Customers.ICustomerCommands, Customers.CustomerCommands>();
         services.AddScoped<Customers.Attachments.ICustomerAttachmentService, Customers.Attachments.CustomerAttachmentService>();
         services.AddScoped<Pppoe.IPppoeCommands, Pppoe.PppoeCommands>();
+        services.AddScoped<Approvals.IApprovalCommands, Approvals.ApprovalCommands>();
         return services;
     }
 }

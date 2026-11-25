@@ -26,7 +26,14 @@
             {
                 <button type="button" class="btn btn-outline" disabled title="Terminated customers are view-only for Staff"><svg class="icon"><use href="#edit" /></svg>Edit Customer</button>
             }
-            <button type="button" class="btn btn-primary" disabled title="Plan changes need a Manager approval request. Available with the Approvals module.">Request Plan Change</button>
+            @if (d.Status == "Active" && d.IsEditable)
+            {
+                <a class="btn btn-primary" href="/pppoe/@d.Id">Request Plan Change</a>
+            }
+            else
+            {
+                <button type="button" class="btn btn-primary" disabled title="Plan change requests are for Active accounts">Request Plan Change</button>
+            }
         </div>
     }
 </div>
@@ -71,7 +78,7 @@
 </section>
 @if (d.Status == "PendingApproval")
 {
-    <div class="detail-alert">This customer is waiting for Manager approval. No PPPoE account exists on the router yet. Approval requests are listed here once the Approvals module is available.</div>
+    <div class="detail-alert">This customer is waiting for Manager approval. No PPPoE account exists on the router yet. The request is listed under <a href="/approvals">Pending Approvals</a> and on the <a href="/pppoe/@d.Id">PPPoE account</a> page.</div>
 }
 <div class="detail-kpis">
     <div class="panel detail-kpi"><span>PPPoE Username</span><strong>@d.PppoeUsername</strong><small>Router account status not checked</small></div>

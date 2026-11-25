@@ -7,6 +7,7 @@ obj/
 .DS_Store
 .idea/
 # Secrets and local config
+appsettings.Secrets.json
 appsettings.*.local.json
 secrets.json
 *.pfx

@@ -1,5 +1,6 @@
 using FluentValidation;
 using Microsoft.Extensions.Logging;
+using Netora.Application.Approvals;
 using Netora.Application.Customers;
 using Netora.Domain.Approvals;
 using Netora.Domain.Customers;
@@ -13,6 +14,8 @@ namespace Netora.Application.Pppoe;
 /// <item>An Active account must be disabled first; disabling (and re-enabling) needs a Manager's approval.
 /// A Manager's own request is approved by that Manager at once.</item>
 /// <item>Changes are stored in the database and marked "not sent to router"; the router is updated by module 09.</item>
+/// <item>Module 08 adds Create (opened when a customer is added; always waits for a Manager), Change Plan (Active accounts)
+/// and Terminate (Active or Disabled). A create request is approved only once a PPPoE password is set.</item>
 /// </list>
 /// </summary>
 internal sealed class PppoeCommands(
@@ -20,6 +23,7 @@ internal sealed class PppoeCommands(
     ICustomerRepository customers,
     IApprovalRepository approvals,
     IPppoePasswordProtector passwords,
+    IApprovalNotifier notifier,
     ILogger<PppoeCommands> logger) : IPppoeCommands
 {
     public async Task<PppoeResult> UpdateAsync(int customerId, UpdatePppoeRequest request, CustomerActor actor,
@@ -103,41 +107,32 @@ internal sealed class PppoeCommands(
     public async Task<PppoeResult> SubmitAsync(int customerId, SubmitPppoeRequest request, CustomerActor actor,
         CancellationToken cancellationToken)
     {
-        if (!Enum.TryParse<ApprovalOperation>(request.Operation + "Pppoe", ignoreCase: true, out var operation)
-            || !Enum.IsDefined(operation))
-        {
-            return new(PppoeOutcome.ValidationFailed, new Dictionary<string, string[]>
-            {
-                [nameof(SubmitPppoeRequest.Operation)] = ["Choose Disable or Enable."],
-            });
-        }
+        if (!PppoeStates.TryParseOperation(request.Operation, out var operation))
+            return Invalid(nameof(SubmitPppoeRequest.Operation), "Choose Create, Disable, Enable, Change Plan or Terminate.");
 
         var reason = Clean(request.Reason);
-        if (reason is { Length: > 500 } || (reason?.Any(char.IsControl) ?? false))
+        if (!IsOneLine(reason, 500))
+            return Invalid(nameof(SubmitPppoeRequest.Reason), "Reason must be at most 500 characters on one line.");
+
+        string? targetPlan = null;
+        if (operation == ApprovalOperation.ChangePlan)
         {
-            return new(PppoeOutcome.ValidationFailed, new Dictionary<string, string[]>
-            {
-                [nameof(SubmitPppoeRequest.Reason)] = ["Reason must be at most 500 characters on one line."],
-            });
+            targetPlan = Clean(request.TargetPlan);
+            if (targetPlan is null || !IsOneLine(targetPlan, 100))
+                return Invalid(nameof(SubmitPppoeRequest.TargetPlan), "Choose the new Internet Plan.");
         }
 
         var customer = await customers.FindForUpdateAsync(customerId, actor.IsManager, cancellationToken);
         if (customer is null) return new(PppoeOutcome.NotFound);
         if (!customer.CanBeChangedBy(actor.IsManager)) return new(PppoeOutcome.CustomerLocked);
-        if (!Fits(operation, customer.Status)) return new(PppoeOutcome.NotAllowedInCurrentState);
+        if (!PppoeStates.Fits(operation, customer.Status)) return new(PppoeOutcome.NotAllowedInCurrentState);
+        if (operation == ApprovalOperation.ChangePlan && string.Equals(targetPlan, customer.PlanName, StringComparison.Ordinal))
+            return Invalid(nameof(SubmitPppoeRequest.TargetPlan), "Choose a plan different from the current one.");
         if (await approvals.FindPendingAsync(customer.Id, cancellationToken) is not null)
             return new(PppoeOutcome.RequestAlreadyPending);
 
         var now = DateTimeOffset.UtcNow;
-        var approval = new ApprovalRequest
-        {
-            CustomerId = customer.Id,
-            Operation = operation,
-            Reason = reason,
-            RequestedByUserId = actor.UserId,
-            RequestedByUserName = actor.UserName,
-            RequestedAtUtc = now,
-        };
+        var approval = PppoeStates.NewRequest(customer, operation, reason, targetPlan, actor, now);
         var label = Label(operation);
         var activity = new List<CustomerActivity>
         {
@@ -146,16 +141,14 @@ internal sealed class PppoeCommands(
 
         Customer? changed = null;
         string? expectedStamp = null;
-        if (actor.IsManager)
+
+        // A Manager's own request is approved by that Manager at once. Account creation is the exception:
+        // a new customer always waits in Pending Approvals for a Manager's review (agreed 2026-11-24).
+        if (actor.IsManager && operation != ApprovalOperation.CreatePppoe)
         {
-            // A Manager's request is approved by that Manager at once.
-            approval.Status = ApprovalStatus.Approved;
-            approval.DecidedByUserId = actor.UserId;
-            approval.DecidedByUserName = actor.UserName;
-            approval.DecidedAtUtc = now;
-            approval.DecisionNote = "Approved by the requesting Manager.";
+            MarkApproved(approval, actor, now, "Approved by the requesting Manager.");
             expectedStamp = customer.ConcurrencyStamp;
-            Apply(customer, operation, actor, now);
+            Apply(customer, approval, actor, now);
             changed = customer;
             activity[0].Outcome = "Approved";
             activity.Add(Activity(customer.Id, $"Pppoe{label}Approved", "Not sent to router yet", actor, now));
@@ -164,8 +157,10 @@ internal sealed class PppoeCommands(
         if (!await approvals.AddAsync(approval, changed, expectedStamp, activity, cancellationToken))
             return new(PppoeOutcome.RequestAlreadyPending);
 
-        logger.LogInformation("PppoeRequestSubmitted CustomerId={CustomerId} RequestId={RequestId} Operation={Operation} Status={Status} ActorUserId={ActorUserId}",
+        logger.LogInformation("ApprovalRequestSubmitted CustomerId={CustomerId} RequestId={RequestId} Operation={Operation} Status={Status} ActorUserId={ActorUserId}",
             customer.Id, approval.Id, operation, approval.Status, actor.UserId);
+        if (approval.Status == ApprovalStatus.Pending)
+            Notify(() => notifier.RequestSubmitted(ApprovalNotice.From(approval)), approval.Id);
         return new(PppoeOutcome.Ok, Request: PppoeStates.ToDto(approval));
     }
 
@@ -175,13 +170,8 @@ internal sealed class PppoeCommands(
         if (!actor.IsManager) return new(PppoeOutcome.Forbidden);
 
         var note = Clean(decision.Note);
-        if (note is { Length: > 500 } || (note?.Any(char.IsControl) ?? false))
-        {
-            return new(PppoeOutcome.ValidationFailed, new Dictionary<string, string[]>
-            {
-                [nameof(DecidePppoeRequest.Note)] = ["Note must be at most 500 characters on one line."],
-            });
-        }
+        if (!IsOneLine(note, 500))
+            return Invalid(nameof(DecidePppoeRequest.Note), "Note must be at most 500 characters on one line.");
 
         var customer = await customers.FindForUpdateAsync(customerId, includeManagerOnly: true, cancellationToken);
         var approval = customer is null ? null : await approvals.FindAsync(customerId, requestId, cancellationToken);
@@ -189,10 +179,6 @@ internal sealed class PppoeCommands(
         if (approval.Status != ApprovalStatus.Pending) return new(PppoeOutcome.AlreadyDecided);
 
         var now = DateTimeOffset.UtcNow;
-        approval.DecidedByUserId = actor.UserId;
-        approval.DecidedByUserName = actor.UserName;
-        approval.DecidedAtUtc = now;
-        approval.DecisionNote = note;
         var label = Label(approval.Operation);
 
         Customer? changed = null;
@@ -200,45 +186,98 @@ internal sealed class PppoeCommands(
         CustomerActivity activity;
         if (decision.Approve)
         {
-            // The account may have changed since the request (for example disabled by another request).
-            if (!Fits(approval.Operation, customer.Status)) return new(PppoeOutcome.NotAllowedInCurrentState);
-            approval.Status = ApprovalStatus.Approved;
+            // The account may have changed since the request was made, so the rules are checked again.
+            var blocked = PppoeStates.ApproveBlocker(approval, customer);
+            if (blocked is not null) return new(blocked.Value);
+
+            // A create request is approved as the account is now (details may be edited while it waits).
+            if (approval.Operation == ApprovalOperation.CreatePppoe)
+                approval.After = PppoeStates.CreateSummary(customer);
+
+            MarkApproved(approval, actor, now, note);
             expectedStamp = customer.ConcurrencyStamp;
-            Apply(customer, approval.Operation, actor, now);
+            Apply(customer, approval, actor, now);
             changed = customer;
             activity = Activity(customer.Id, $"Pppoe{label}Approved", Join("Not sent to router yet", note), actor, now);
         }
         else
         {
             approval.Status = ApprovalStatus.Rejected;
+            approval.DecidedByUserId = actor.UserId;
+            approval.DecidedByUserName = actor.UserName;
+            approval.DecidedAtUtc = now;
+            approval.DecisionNote = note;
+            approval.ProvisioningStatus = ProvisioningStatus.NotApplicable;
             activity = Activity(customer.Id, $"Pppoe{label}Rejected", note, actor, now, "Rejected");
         }
 
         if (!await approvals.SaveDecisionAsync(approval, changed, expectedStamp, activity, cancellationToken))
             return new(PppoeOutcome.AlreadyDecided);
 
-        logger.LogInformation("PppoeRequestDecided CustomerId={CustomerId} RequestId={RequestId} Status={Status} ActorUserId={ActorUserId}",
-            customer.Id, approval.Id, approval.Status, actor.UserId);
+        logger.LogInformation("ApprovalRequestDecided CustomerId={CustomerId} RequestId={RequestId} Operation={Operation} Status={Status} ActorUserId={ActorUserId}",
+            customer.Id, approval.Id, approval.Operation, approval.Status, actor.UserId);
+        Notify(() => notifier.RequestDecided(ApprovalNotice.From(approval)), approval.Id);
         return new(PppoeOutcome.Ok, Request: PppoeStates.ToDto(approval));
     }
 
-    private static bool Fits(ApprovalOperation operation, CustomerStatus status) => operation switch
+
+    private static void MarkApproved(ApprovalRequest approval, CustomerActor actor, DateTimeOffset now, string? note)
     {
-        ApprovalOperation.DisablePppoe => status == CustomerStatus.Active,
-        ApprovalOperation.EnablePppoe => status == CustomerStatus.Disabled,
-        _ => false,
-    };
+        approval.Status = ApprovalStatus.Approved;
+        approval.DecidedByUserId = actor.UserId;
+        approval.DecidedByUserName = actor.UserName;
+        approval.DecidedAtUtc = now;
+        approval.DecisionNote = note;
+        // Approved is not the same as done on the router (08.04). Module 09 sends it and records the outcome.
+        approval.ProvisioningStatus = ProvisioningStatus.NotSent;
+    }
 
     /// <summary>Applies an approved change to the database. The router is not touched (module 09).</summary>
-    private static void Apply(Customer customer, ApprovalOperation operation, CustomerActor actor, DateTimeOffset now)
+    private static void Apply(Customer customer, ApprovalRequest approval, CustomerActor actor, DateTimeOffset now)
     {
-        customer.Status = operation == ApprovalOperation.DisablePppoe ? CustomerStatus.Disabled : CustomerStatus.Active;
+        switch (approval.Operation)
+        {
+            case ApprovalOperation.DisablePppoe:
+                customer.Status = CustomerStatus.Disabled;
+                break;
+            case ApprovalOperation.EnablePppoe:
+            case ApprovalOperation.CreatePppoe:
+                customer.Status = CustomerStatus.Active;
+                break;
+            case ApprovalOperation.ChangePlan:
+                customer.PlanName = approval.TargetPlanName!;
+                break;
+            case ApprovalOperation.TerminatePppoe:
+                customer.Status = CustomerStatus.Terminated;
+                break;
+        }
         customer.RouterSyncStatus = RouterSyncStatus.NotSent;
         customer.UpdatedAtUtc = now;
         customer.UpdatedByUserId = actor.UserId;
     }
 
-    private static string Label(ApprovalOperation operation) => operation == ApprovalOperation.DisablePppoe ? "Disable" : "Enable";
+    /// <summary>Emails are best effort: a notifier failure is logged and never changes the saved outcome (08.03).</summary>
+    private void Notify(Action send, long requestId)
+    {
+        try
+        {
+            send();
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "ApprovalNotificationFailed RequestId={RequestId}", requestId);
+        }
+    }
+
+    private static string Label(ApprovalOperation operation) => operation switch
+    {
+        ApprovalOperation.DisablePppoe => "Disable",
+        ApprovalOperation.EnablePppoe => "Enable",
+        ApprovalOperation.CreatePppoe => "Create",
+        ApprovalOperation.ChangePlan => "ChangePlan",
+        ApprovalOperation.TerminatePppoe => "Terminate",
+        _ => operation.ToString(),
+    };
 
     private static CustomerActivity Activity(int customerId, string action, string? detail, CustomerActor actor,
         DateTimeOffset at, string outcome = "Completed") => new()
@@ -251,6 +290,11 @@ internal sealed class PppoeCommands(
         Outcome = outcome,
         OccurredAtUtc = at,
     };
+
+    private static bool IsOneLine(string? value, int max) => value is null || (value.Length <= max && !value.Any(char.IsControl));
+
+    private static PppoeResult Invalid(string field, string message) => new(PppoeOutcome.ValidationFailed,
+        new Dictionary<string, string[]> { [field] = [message] });
 
     private static string? Join(string first, string? second) => string.IsNullOrEmpty(second) ? first : $"{first}. {second}";
 
