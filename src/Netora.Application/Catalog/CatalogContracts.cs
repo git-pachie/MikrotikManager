@@ -11,6 +11,12 @@ public sealed record PlanListItemDto(
 
 public sealed record PlanListDto(IReadOnlyList<PlanListItemDto> Items);
 
+public static class PlanSort
+{
+    /// <summary>Sortable columns of the Plan Catalogue. Anything else is ignored, never passed to the database.</summary>
+    public static readonly string[] Columns = ["plan", "fee", "profile"];
+}
+
 public sealed record PlanDetailDto(
     int Id, string Name, decimal? MonthlyFee, int? DownloadMbps, int? UploadMbps, string RouterProfile, bool IsActive,
     int Subscribers, string ConcurrencyStamp, DateTimeOffset CreatedAtUtc, DateTimeOffset? UpdatedAtUtc);
@@ -25,7 +31,17 @@ public sealed record PlanProfileCheckDto(
     string Mode, bool Reachable, string? Error, DateTimeOffset CheckedAtUtc,
     IReadOnlyList<PlanProfileStatusDto> Plans, IReadOnlyList<string> UnusedRouterProfiles);
 
-public sealed record PlanProfileStatusDto(int PlanId, string Name, string RouterProfile, bool IsActive, bool Found);
+/// <param name="ExpectedRateLimit">From the plan's speeds (upload/download), or null when the speeds are not set.</param>
+/// <param name="RouterRateLimit">The profile's rate-limit on the router; null when unlimited or not found.</param>
+/// <param name="SpeedDiffers">Found, the plan has speeds, and the router's rate-limit is different.</param>
+public sealed record PlanProfileStatusDto(int PlanId, string Name, string RouterProfile, bool IsActive, bool Found,
+    string? ExpectedRateLimit = null, string? RouterRateLimit = null, bool SpeedDiffers = false);
+
+/// <param name="Action">Created, Updated or Unchanged.</param>
+public sealed record PlanSentDto(string Action, string Profile, string RateLimit, string? PreviousRateLimit, string Mode);
+
+public sealed record PlanSendResult(CatalogOutcome Outcome, PlanSentDto? Data = null, string? Error = null,
+    IReadOnlyDictionary<string, string[]>? Errors = null);
 
 public sealed class SavePlanRequestValidator : AbstractValidator<SavePlanRequest>
 {
@@ -45,7 +61,8 @@ public sealed class SavePlanRequestValidator : AbstractValidator<SavePlanRequest
 
 public interface IPlanService
 {
-    Task<PlanListDto> ListAsync(bool viewerIsManager, CancellationToken cancellationToken);
+    /// <param name="sortBy">One of <see cref="PlanSort.Columns"/>; anything else keeps the default order (active first, then name).</param>
+    Task<PlanListDto> ListAsync(bool viewerIsManager, CancellationToken cancellationToken, string? sortBy = null, bool descending = false);
 
     Task<PlanDetailDto?> GetAsync(int id, bool viewerIsManager, CancellationToken cancellationToken);
 
@@ -55,8 +72,14 @@ public interface IPlanService
     /// <summary>Managers only. Renaming or remapping never touches customers or the router.</summary>
     Task<CatalogResult> UpdateAsync(int id, SavePlanRequest request, CustomerActor actor, CancellationToken cancellationToken);
 
-    /// <summary>Lists the router's PPP profiles and compares them with the plans. Read only.</summary>
+    /// <summary>Lists the router's PPP profiles and compares them (name and speed) with the plans. Read only.</summary>
     Task<PlanProfileCheckDto> CheckRouterAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Managers only, on request ("Send to Router"): creates the plan's PPP profile on the router if it is missing, or
+    /// sets its rate-limit to the plan's speeds. Changes nothing else and never deletes. Needs both speeds.
+    /// </summary>
+    Task<PlanSendResult> SendProfileToRouterAsync(int id, CustomerActor actor, CancellationToken cancellationToken);
 }
 
 // ----- NAP Boxes (module 06) -----
@@ -126,6 +149,9 @@ public enum CatalogOutcome
 
     /// <summary>The built-in UNKNOWN NAP cannot be edited.</summary>
     Locked,
+
+    /// <summary>The router could not be reached or refused the change.</summary>
+    RouterFailed,
 }
 
 public sealed record CatalogResult(CatalogOutcome Outcome, int? Id = null, IReadOnlyDictionary<string, string[]>? Errors = null);

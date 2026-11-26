@@ -65,6 +65,29 @@ public class CatalogTests
     }
 
     [Fact]
+    public async Task A_mikrotik_profile_can_belong_to_one_plan_only()
+    {
+        var t = new TestDb();
+        var fiber50 = t.PlanIds["Fiber 50 Mbps"];
+        await using var db = t.NewContext();
+        var stamp = (await Plans(db).GetAsync(fiber50, true, default))!.ConcurrencyStamp;
+
+        // A copy that keeps the original's profile (any letter case) is refused; with its own profile it is saved.
+        var copy = await Plans(db).CreateAsync(NewPlan("Fiber 50 Mbps (copy)", "fiber 50 MBPS"), TestDb.Manager, default);
+        var ownProfile = await Plans(db).CreateAsync(NewPlan("Fiber 50 Mbps (copy)", "NETORA_50M_PROMO"), TestDb.Manager, default);
+        // Editing: another plan's profile is refused; keeping your own is fine.
+        var takeOther = await Plans(db).UpdateAsync(fiber50, NewPlan("Fiber 50 Mbps", "Fiber 30 Mbps", stamp: stamp), TestDb.Manager, default);
+        var keepOwn = await Plans(db).UpdateAsync(fiber50, NewPlan("Fiber 50 Mbps", "Fiber 50 Mbps", stamp: stamp), TestDb.Manager, default);
+
+        Assert.Equal(CatalogOutcome.Duplicate, copy.Outcome);
+        Assert.Contains("Fiber 50 Mbps", Assert.Single(copy.Errors![nameof(SavePlanRequest.RouterProfile)]));
+        Assert.Equal(CatalogOutcome.Ok, ownProfile.Outcome);
+        Assert.Equal(CatalogOutcome.Duplicate, takeOther.Outcome);
+        Assert.Contains(nameof(SavePlanRequest.RouterProfile), takeOther.Errors!.Keys);
+        Assert.Equal(CatalogOutcome.Ok, keepOwn.Outcome);
+    }
+
+    [Fact]
     public async Task Editing_a_plan_needs_the_current_stamp_and_keeps_customers_linked()
     {
         var t = new TestDb(); var ids = t.Seed();
@@ -86,6 +109,34 @@ public class CatalogTests
         var customer = await CustomerOf(t, ids.Normal);
         Assert.Equal(("Plan 899", "NETORA_100M"), (customer.Plan.Name, customer.Plan.RouterProfile));
         Assert.Equal(RouterSyncStatus.NotSent, customer.RouterSyncStatus);   // the router is not touched
+    }
+
+    [Fact]
+    public async Task Plans_sort_by_name_fee_and_profile_with_missing_fees_last()
+    {
+        var t = new TestDb();
+        await using (var setup = t.NewContext())
+        {
+            foreach (var p in setup.InternetPlans)
+                (p.MonthlyFee, p.RouterProfile) = p.Name switch
+                {
+                    "Fiber 30 Mbps" => (699m, "C_PROFILE"),
+                    "Fiber 50 Mbps" => (799m, "A_PROFILE"),
+                    "Fiber 100 Mbps" => ((decimal?)null, "B_PROFILE"),
+                    _ => (999m, "D_PROFILE"),   // Fiber 300 Mbps
+                };
+            (await setup.InternetPlans.SingleAsync(p => p.Name == "Fiber 300 Mbps")).IsActive = false;
+            await setup.SaveChangesAsync();
+        }
+        await using var db = t.NewContext();
+        async Task<string[]> Names(string? by, bool desc = false)
+            => (await Plans(db).ListAsync(true, default, by, desc)).Items.Select(p => p.Name).ToArray();
+
+        Assert.Equal(["Fiber 100 Mbps", "Fiber 30 Mbps", "Fiber 50 Mbps", "Fiber 300 Mbps"], await Names(null));   // active first
+        Assert.Equal(["Fiber 30 Mbps", "Fiber 50 Mbps", "Fiber 300 Mbps", "Fiber 100 Mbps"], await Names("fee"));
+        Assert.Equal(["Fiber 300 Mbps", "Fiber 50 Mbps", "Fiber 30 Mbps", "Fiber 100 Mbps"], await Names("fee", desc: true));
+        Assert.Equal(["Fiber 50 Mbps", "Fiber 100 Mbps", "Fiber 30 Mbps", "Fiber 300 Mbps"], await Names("profile"));
+        Assert.Equal(["Fiber 50 Mbps", "Fiber 300 Mbps", "Fiber 30 Mbps", "Fiber 100 Mbps"], await Names("plan", desc: true));
     }
 
     [Fact]
@@ -206,7 +257,15 @@ public class CatalogTests
     {
         var t = new TestDb();
         var router = new FakeRouter();
-        router.Profiles.AddRange(["Fiber 30 Mbps", "Fiber 50 Mbps", "VIP"]);
+        router.AddProfile("Fiber 30 Mbps", "30M/30M");
+        router.AddProfile("Fiber 50 Mbps", "20M/20M 0/0 0/0");
+        router.AddProfile("VIP");
+        await using (var setup = t.NewContext())
+        {
+            foreach (var p in setup.InternetPlans.Where(p => p.Name == "Fiber 30 Mbps" || p.Name == "Fiber 50 Mbps"))
+                (p.UploadMbps, p.DownloadMbps) = p.Name == "Fiber 30 Mbps" ? (30, 30) : (50, 50);
+            await setup.SaveChangesAsync();
+        }
         await using var db = t.NewContext();
 
         var check = await Plans(db, router).CheckRouterAsync(default);
@@ -214,12 +273,50 @@ public class CatalogTests
         var down = await Plans(db, router).CheckRouterAsync(default);
 
         Assert.True(check.Reachable);
-        Assert.True(check.Plans.Single(p => p.Name == "Fiber 50 Mbps").Found);
+        var fiber30 = check.Plans.Single(p => p.Name == "Fiber 30 Mbps");
+        var fiber50 = check.Plans.Single(p => p.Name == "Fiber 50 Mbps");
+        Assert.True(fiber30.Found && !fiber30.SpeedDiffers);
+        Assert.True(fiber50.Found && fiber50.SpeedDiffers);
+        Assert.Equal(("50M/50M", "20M/20M 0/0 0/0"), (fiber50.ExpectedRateLimit, fiber50.RouterRateLimit));
         Assert.False(check.Plans.Single(p => p.Name == "Fiber 100 Mbps").Found);
         Assert.Equal(["default", "VIP"], check.UnusedRouterProfiles);
         Assert.False(down.Reachable);
         Assert.Contains("could not be reached", down.Error);
-        Assert.Equal(0, router.Creates + router.Updates);
+        Assert.Equal(0, router.Creates + router.Updates + router.ProfileWrites);
+    }
+
+    [Fact]
+    public async Task Send_to_router_creates_or_updates_only_the_rate_limit_and_only_for_managers()
+    {
+        var t = new TestDb();
+        var router = new FakeRouter();
+        var existing = router.AddProfile("Fiber 50 Mbps", "20M/20M");
+        await using (var setup = t.NewContext())
+        {
+            foreach (var p in setup.InternetPlans.Where(p => p.Name != "Fiber 300 Mbps"))
+                (p.UploadMbps, p.DownloadMbps) = p.Name switch { "Fiber 30 Mbps" => (10, 30), "Fiber 50 Mbps" => (50, 50), _ => (100, 100) };
+            await setup.SaveChangesAsync();
+        }
+        await using var db = t.NewContext();
+        var service = Plans(db, router);
+
+        var staff = await service.SendProfileToRouterAsync(t.PlanIds["Fiber 30 Mbps"], TestDb.Staff, default);
+        var created = await service.SendProfileToRouterAsync(t.PlanIds["Fiber 30 Mbps"], TestDb.Manager, default);
+        var updated = await service.SendProfileToRouterAsync(t.PlanIds["Fiber 50 Mbps"], TestDb.Manager, default);
+        var again = await service.SendProfileToRouterAsync(t.PlanIds["Fiber 50 Mbps"], TestDb.Manager, default);
+        var noSpeeds = await service.SendProfileToRouterAsync(t.PlanIds["Fiber 300 Mbps"], TestDb.Manager, default);
+        router.Down = true;
+        var down = await service.SendProfileToRouterAsync(t.PlanIds["Fiber 100 Mbps"], TestDb.Manager, default);
+
+        Assert.Equal(CatalogOutcome.Forbidden, staff.Outcome);
+        Assert.Equal(("Created", "10M/30M"), (created.Data!.Action, created.Data.RateLimit));   // upload/download
+        Assert.Equal(("Updated", "20M/20M", "50M/50M"), (updated.Data!.Action, updated.Data.PreviousRateLimit, updated.Data.RateLimit));
+        Assert.Equal("Unchanged", again.Data!.Action);
+        Assert.Equal(CatalogOutcome.ValidationFailed, noSpeeds.Outcome);
+        Assert.Equal(CatalogOutcome.RouterFailed, down.Outcome);
+        Assert.Equal(2, router.ProfileWrites);
+        Assert.Equal(existing.Id, router.Profiles.Single(p => p.Name == "Fiber 50 Mbps").Id);   // updated in place, not recreated
+        Assert.Equal("10M/30M", router.Profiles.Single(p => p.Name == "Fiber 30 Mbps").RateLimit);
     }
 
     [Fact]

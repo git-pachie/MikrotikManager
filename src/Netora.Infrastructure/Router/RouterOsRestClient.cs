@@ -73,13 +73,27 @@ internal sealed partial class RouterOsRestClient(
             : null;
     }
 
-    public async Task<IReadOnlyList<string>> ListProfilesAsync(CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<RouterPppProfile>> ListProfilesAsync(CancellationToken cancellationToken)
     {
         var list = await SendAsync(HttpMethod.Get, "ppp/profile", null, cancellationToken);
         return list.ValueKind == JsonValueKind.Array
-            ? list.EnumerateArray().Select(e => Str(e, "name")).OfType<string>().ToList()
+            ? list.EnumerateArray().Select(ToProfile).Where(p => p.Name.Length > 0).ToList()
             : [];
     }
+
+    public async Task<RouterPppProfile> CreateProfileAsync(string name, string rateLimit, CancellationToken cancellationToken)
+        => ToProfile(await SendAsync(HttpMethod.Put, "ppp/profile",
+            new Dictionary<string, string> { ["name"] = name, ["rate-limit"] = rateLimit }, cancellationToken));
+
+    public async Task<RouterPppProfile> UpdateProfileRateLimitAsync(string id, string rateLimit, CancellationToken cancellationToken)
+    {
+        if (!IdPattern().IsMatch(id)) throw new RouterException(RouterErrorKind.Rejected, "The router profile ID is not valid.");
+        return ToProfile(await SendAsync(HttpMethod.Patch, $"ppp/profile/{id}",
+            new Dictionary<string, string> { ["rate-limit"] = rateLimit }, cancellationToken));
+    }
+
+    private static RouterPppProfile ToProfile(JsonElement e)
+        => new(Str(e, ".id") ?? string.Empty, Str(e, "name") ?? string.Empty, Str(e, "rate-limit"));
 
     private static Dictionary<string, string> Body(RouterSecretWrite s, bool creating)
     {
@@ -119,7 +133,10 @@ internal sealed partial class RouterOsRestClient(
             Convert.ToBase64String(Encoding.UTF8.GetBytes($"{c.UserName}:{c.Password}")));
 
         using var request = new HttpRequestMessage(method, path);
-        if (body is not null) request.Content = JsonContent.Create(body);
+        // Buffered with a Content-Length: RouterOS's REST server does not read chunked request bodies and answers
+        // "Request is empty" (found against RouterOS 7.19.4). JsonContent.Create streams, so it is not used here.
+        if (body is not null)
+            request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
 
         HttpResponseMessage response;
         try

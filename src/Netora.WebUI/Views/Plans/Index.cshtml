@@ -47,7 +47,16 @@
     {
         <div class="table-scroll">
             <table class="customers-table all-table">
-                <thead><tr><th>Plan</th><th>Monthly Fee</th><th>Download / Upload</th><th>MikroTik Profile</th><th>Subscribers</th><th>Actions</th></tr></thead>
+                <thead>
+                    <tr>
+                        <th aria-sort="@Model.AriaSort("plan")"><a class="th-sort" href="@Model.SortUrl("plan")">Plan<span class="sort-mark" aria-hidden="true">@Model.SortMark("plan")</span></a></th>
+                        <th aria-sort="@Model.AriaSort("fee")"><a class="th-sort" href="@Model.SortUrl("fee")">Monthly Fee<span class="sort-mark" aria-hidden="true">@Model.SortMark("fee")</span></a></th>
+                        <th>Download / Upload</th>
+                        <th aria-sort="@Model.AriaSort("profile")"><a class="th-sort" href="@Model.SortUrl("profile")">MikroTik Profile<span class="sort-mark" aria-hidden="true">@Model.SortMark("profile")</span></a></th>
+                        <th>Subscribers</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
                 <tbody>
                     @foreach (var p in Model.Data.Items)
                     {
@@ -60,7 +69,23 @@
                             <td>
                                 @if (Model.IsManager)
                                 {
-                                    <a class="btn btn-primary" href="/plans/@p.Id/edit">Edit</a>
+                                    <div class="plan-actions">
+                                        <a class="btn btn-primary" href="/plans/@p.Id/edit">Edit</a>
+                                        <a class="btn btn-outline" href="/plans/new?copyFrom=@p.Id" title="New plan filled in from this one">Copy</a>
+                                        @if (p.DownloadMbps is { } down && p.UploadMbps is { } up)
+                                        {
+                                            var rate = Netora.Application.Router.RouterRules.RateLimit(up, down);
+                                            <form method="post" action="/plans/@p.Id/send-to-router"
+                                                  data-confirm="Send PPP profile '@p.RouterProfile' to the router with rate-limit @rate (upload/download)? It is created if missing; otherwise only its rate-limit changes, for every customer using it (@p.Subscribers on this plan) from their next connection.">
+                                                @Html.AntiForgeryToken()
+                                                <button type="submit" class="btn btn-outline">Send to Router</button>
+                                            </form>
+                                        }
+                                        else
+                                        {
+                                            <button type="button" class="btn btn-outline" disabled title="Enter the download and upload speeds first.">Send to Router</button>
+                                        }
+                                    </div>
                                 }
                                 else
                                 {
@@ -84,7 +109,7 @@
         }
     </div>
     <p>Each plan maps to a RouterOS PPP profile. Plan changes for existing customers require Manager approval before provisioning.</p>
-    <p class="module-note">Netora never creates or changes PPP profiles on the router: create the profile in RouterOS first, then enter its exact name here. Editing a plan does not resend existing customers; any difference shows as a Configuration Mismatch on the customer profile. Inactive plans cannot be chosen for new customers or plan changes. Subscriber counts include every status@(Model.IsManager ? "" : " and leave out Manager-only customers").</p>
+    <p class="module-note">Saving a plan does not change the router. A Manager's <strong>Send to Router</strong> creates the plan's PPP profile if it is missing, or sets its rate-limit to the plan's speeds; nothing else on the profile is changed and nothing is deleted. Editing a plan does not resend existing customers; any difference shows as a Configuration Mismatch on the customer profile. Inactive plans cannot be chosen for new customers or plan changes. Subscriber counts include every status@(Model.IsManager ? "" : " and leave out Manager-only customers").</p>
     @if (Model.CheckError is not null)
     {
         <div class="form-alert" role="alert">@Model.CheckError</div>
@@ -100,14 +125,20 @@
         {
             <div class="table-scroll">
                 <table class="customers-table all-table">
-                    <thead><tr><th>Plan</th><th>MikroTik Profile</th><th>On Router</th></tr></thead>
+                    <thead><tr><th>Plan</th><th>MikroTik Profile</th><th>Plan Rate-limit</th><th>Router Rate-limit</th><th>On Router</th></tr></thead>
                     <tbody>
                         @foreach (var p in check.Plans)
                         {
                             <tr>
                                 <td>@p.Name @if (!p.IsActive) { <span class="pill disabled">Inactive</span> }</td>
                                 <td>@p.RouterProfile</td>
-                                <td>@if (p.Found) { <span class="pill active">Found</span> } else { <span class="pill terminated">Missing</span> }</td>
+                                <td>@(p.ExpectedRateLimit ?? "—")</td>
+                                <td>@(p.Found ? p.RouterRateLimit ?? "unlimited" : "—")</td>
+                                <td>
+                                    @if (!p.Found) { <span class="pill terminated">Missing</span> }
+                                    else if (p.SpeedDiffers) { <span class="pill pending">Speed differs</span> }
+                                    else { <span class="pill active">Found</span> }
+                                </td>
                             </tr>
                         }
                     </tbody>
@@ -115,7 +146,9 @@
             </div>
             <p class="module-note">
                 Checked @check.CheckedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm").
-                @if (check.Plans.Any(p => !p.Found)) { <text>Customers on a plan with a missing profile cannot be provisioned until the profile exists on the router.</text> }
+                @if (check.Plans.Any(p => !p.Found)) { <text>Customers on a plan with a missing profile cannot be provisioned until the profile exists on the router; use Send to Router.</text> }
+                @if (check.Plans.Any(p => p.SpeedDiffers)) { <text>"Speed differs": the router's rate-limit is not the plan's speed. Send to Router sets it, or change the plan.</text> }
+                Rate-limits are upload/download, as RouterOS writes them.
                 @if (check.UnusedRouterProfiles.Count > 0) { <text>Profiles on the router without a plan: @string.Join(", ", check.UnusedRouterProfiles).</text> }
             </p>
         }

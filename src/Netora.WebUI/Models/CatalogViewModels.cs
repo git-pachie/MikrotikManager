@@ -41,6 +41,9 @@ public sealed class PlanFormViewModel
     /// <summary>Saved values, to warn when the profile is being changed for a plan that has customers.</summary>
     public string? SavedRouterProfile { get; set; }
 
+    /// <summary>Name of the plan this form was copied from (Add only).</summary>
+    public string? CopiedFrom { get; set; }
+
     public static PlanFormViewModel From(PlanDetailDto p) => new()
     {
         Id = p.Id, Name = p.Name, MonthlyFee = p.MonthlyFee, DownloadMbps = p.DownloadMbps, UploadMbps = p.UploadMbps,
@@ -60,6 +63,18 @@ public sealed class PlanListViewModel
     /// <summary>Set after "Check Router" (Managers only).</summary>
     public PlanProfileCheckDto? Check { get; init; }
     public string? CheckError { get; init; }
+
+    /// <summary>One of <see cref="PlanSort.Columns"/>, or null for the default order.</summary>
+    public string? SortBy { get; init; }
+    public bool Descending { get; init; }
+
+    /// <summary>Column header link, same behaviour as the Customers list: first click ascending, then it flips.</summary>
+    public string SortUrl(string column)
+        => $"/plans?sortBy={column}&sortDir={(SortBy == column && !Descending ? "desc" : "asc")}";
+
+    public string? AriaSort(string column) => SortBy != column ? null : Descending ? "descending" : "ascending";
+
+    public string SortMark(string column) => SortBy != column ? "" : Descending ? "▼" : "▲";
 }
 
 /// <summary>Add NAP Box, and the editable fields on NAP Box Details.</summary>

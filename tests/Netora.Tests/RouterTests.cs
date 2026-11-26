@@ -62,12 +62,36 @@ public sealed class FakeRouter : IRouterClient
     public Task<RouterActiveSession?> FindActiveSessionAsync(string name, CancellationToken ct)
         => Task.FromResult(Online.Contains(name) ? new RouterActiveSession(name, "10.0.0.9", "1h", null) : null);
 
-    public List<string> Profiles { get; } = ["default"];
+    public List<RouterPppProfile> Profiles { get; } = [new("*P0", "default", null)];
+    public int ProfileWrites { get; private set; }
 
-    public Task<IReadOnlyList<string>> ListProfilesAsync(CancellationToken ct)
+    public RouterPppProfile AddProfile(string name, string? rateLimit = null)
+    {
+        var p = new RouterPppProfile($"*P{next++:X}", name, rateLimit);
+        Profiles.Add(p);
+        return p;
+    }
+
+    public Task<IReadOnlyList<RouterPppProfile>> ListProfilesAsync(CancellationToken ct)
     {
         Check();
-        return Task.FromResult<IReadOnlyList<string>>(Profiles.ToList());
+        return Task.FromResult<IReadOnlyList<RouterPppProfile>>(Profiles.ToList());
+    }
+
+    public Task<RouterPppProfile> CreateProfileAsync(string name, string rateLimit, CancellationToken ct)
+    {
+        Check();
+        ProfileWrites++;
+        return Task.FromResult(AddProfile(name, rateLimit));
+    }
+
+    public Task<RouterPppProfile> UpdateProfileRateLimitAsync(string id, string rateLimit, CancellationToken ct)
+    {
+        Check();
+        ProfileWrites++;
+        var i = Profiles.FindIndex(p => p.Id == id);
+        Profiles[i] = Profiles[i] with { RateLimit = rateLimit };
+        return Task.FromResult(Profiles[i]);
     }
 
     public RouterSecret Add(string name, string profile, bool disabled = false, string? comment = null, string? password = "pw")

@@ -8,13 +8,17 @@ namespace Netora.WebUI.Controllers;
 public class PlansController(INetoraApiClient apiClient) : Controller
 {
     [HttpGet("/plans")]
-    public async Task<IActionResult> Index(CancellationToken cancellationToken)
+    public async Task<IActionResult> Index(string? sortBy, string? sortDir, CancellationToken cancellationToken)
     {
-        var result = await apiClient.GetPlansAsync(cancellationToken);
+        var column = Netora.Application.Catalog.PlanSort.Columns.Contains(sortBy) ? sortBy : null;
+        var descending = column is not null && string.Equals(sortDir, "desc", StringComparison.OrdinalIgnoreCase);
+        var result = await apiClient.GetPlansAsync(cancellationToken, column, descending);
         return View(new PlanListViewModel
         {
             Data = result.Data,
             IsManager = IsManager,
+            SortBy = column,
+            Descending = descending,
             ErrorMessage = result.Success ? null : "Plans could not be loaded. The Web API is unavailable; try again in a moment.",
         });
     }
@@ -36,8 +40,59 @@ public class PlansController(INetoraApiClient apiClient) : Controller
         });
     }
 
+    /// <summary>
+    /// Managers only: creates the plan's PPP profile on the router, or sets its rate-limit to the plan's speeds.
+    /// Then shows the router check, so the result is visible at once.
+    /// </summary>
+    [HttpPost("/plans/{id:int}/send-to-router")]
+    public async Task<IActionResult> SendToRouter(int id, CancellationToken cancellationToken)
+    {
+        if (!IsManager) return Denied();
+        var result = await apiClient.SendPlanToRouterAsync(id, cancellationToken);
+        if (result.Data is { } sent)
+        {
+            var where = sent.Mode == "Mock" ? "the mock router" : "the router";
+            TempData[CustomersController.ToastKey] = sent.Action switch
+            {
+                "Created" => $"PPP profile {sent.Profile} created on {where} with rate-limit {sent.RateLimit}.",
+                "Updated" => $"PPP profile {sent.Profile} updated on {where}: rate-limit {sent.PreviousRateLimit ?? "unlimited"} → {sent.RateLimit}. Customers on this profile get the new speed when they reconnect.",
+                _ => $"PPP profile {sent.Profile} on {where} already has rate-limit {sent.RateLimit}. Nothing changed.",
+            };
+        }
+        else
+        {
+            if (result.Error?.Code == "not_found") return NotFoundPage();
+            TempData[CustomersController.ErrorKey] = "The profile was not sent. " + (result.Error?.Code switch
+            {
+                "validation_failed" => string.Join(" ", result.Error.Details?.SelectMany(d => d.Value) ?? []),
+                "api_unreachable" => "The Web API is unavailable; try again in a moment.",
+                _ => result.Error?.Message ?? "Unexpected error.",
+            });
+        }
+        return Redirect("/plans/router-check");
+    }
+
+    /// <summary>Add Internet Plan, optionally filled in from an existing plan (Copy). The copy is a new plan; nothing is saved yet.</summary>
     [HttpGet("/plans/new")]
-    public IActionResult Create() => IsManager ? View("Form", new PlanFormViewModel()) : Denied();
+    public async Task<IActionResult> Create(int? copyFrom, CancellationToken cancellationToken)
+    {
+        if (!IsManager) return Denied();
+        if (copyFrom is null) return View("Form", new PlanFormViewModel());
+
+        var source = await apiClient.GetPlanAsync(copyFrom.Value, cancellationToken);
+        if (source.Data is not { } p)
+        {
+            if (source.Error?.Code == "not_found") return NotFoundPage();
+            TempData[CustomersController.ErrorKey] = "The plan to copy could not be loaded. " + source.Error?.Message;
+            return Redirect("/plans");
+        }
+        // Name and profile are kept as they are, so the Manager must give the copy its own (both are checked on save).
+        return View("Form", new PlanFormViewModel
+        {
+            Name = $"{p.Name} (copy)", MonthlyFee = p.MonthlyFee, DownloadMbps = p.DownloadMbps, UploadMbps = p.UploadMbps,
+            RouterProfile = p.RouterProfile, IsActive = p.IsActive, CopiedFrom = p.Name,
+        });
+    }
 
     [HttpPost("/plans/new")]
     public async Task<IActionResult> Create(PlanFormViewModel model, CancellationToken cancellationToken)

@@ -64,11 +64,12 @@ public interface INetoraApiClient
     Task<ApiResponse<RouterStatusDto>> GetRouterStatusAsync(int customerId, CancellationToken cancellationToken);
     Task<ApiResponse<ImportScanDto>> ScanImportAsync(CancellationToken cancellationToken);
     Task<ApiResponse<ImportResultDto>> ImportPppoeAsync(ImportRequest request, CancellationToken cancellationToken);
-    Task<ApiResponse<PlanListDto>> GetPlansAsync(CancellationToken cancellationToken);
+    Task<ApiResponse<PlanListDto>> GetPlansAsync(CancellationToken cancellationToken, string? sortBy = null, bool descending = false);
     Task<ApiResponse<PlanDetailDto>> GetPlanAsync(int id, CancellationToken cancellationToken);
     Task<ApiResponse<CatalogSavedDto>> CreatePlanAsync(SavePlanRequest request, CancellationToken cancellationToken);
     Task<ApiResponse<CatalogSavedDto>> UpdatePlanAsync(int id, SavePlanRequest request, CancellationToken cancellationToken);
     Task<ApiResponse<PlanProfileCheckDto>> CheckPlanProfilesAsync(CancellationToken cancellationToken);
+    Task<ApiResponse<PlanSentDto>> SendPlanToRouterAsync(int id, CancellationToken cancellationToken);
     Task<ApiResponse<NapListDto>> GetNapBoxesAsync(CancellationToken cancellationToken);
     Task<ApiResponse<NapDetailDto>> GetNapBoxAsync(int id, CancellationToken cancellationToken);
     Task<ApiResponse<CatalogSavedDto>> CreateNapBoxAsync(SaveNapRequest request, CancellationToken cancellationToken);
@@ -232,8 +233,10 @@ public sealed class NetoraApiClient(HttpClient httpClient, ILogger<NetoraApiClie
 
     public Task<ApiResponse<ImportResultDto>> ImportPppoeAsync(ImportRequest request, CancellationToken cancellationToken)
         => SendAsync<ImportResultDto>(HttpMethod.Post, "api/v1/pppoe/import", request, cancellationToken);
-    public Task<ApiResponse<PlanListDto>> GetPlansAsync(CancellationToken cancellationToken)
-        => SendAsync<PlanListDto>(HttpMethod.Get, "api/v1/plans", null, cancellationToken);
+    public Task<ApiResponse<PlanListDto>> GetPlansAsync(CancellationToken cancellationToken, string? sortBy = null, bool descending = false)
+        => SendAsync<PlanListDto>(HttpMethod.Get,
+            sortBy is null ? "api/v1/plans" : $"api/v1/plans?sortBy={Uri.EscapeDataString(sortBy)}&sortDir={(descending ? "desc" : "asc")}",
+            null, cancellationToken);
 
     public Task<ApiResponse<PlanDetailDto>> GetPlanAsync(int id, CancellationToken cancellationToken)
         => SendAsync<PlanDetailDto>(HttpMethod.Get, $"api/v1/plans/{id}", null, cancellationToken);
@@ -246,6 +249,9 @@ public sealed class NetoraApiClient(HttpClient httpClient, ILogger<NetoraApiClie
 
     public Task<ApiResponse<PlanProfileCheckDto>> CheckPlanProfilesAsync(CancellationToken cancellationToken)
         => SendAsync<PlanProfileCheckDto>(HttpMethod.Get, "api/v1/plans/router-check", null, cancellationToken);
+
+    public Task<ApiResponse<PlanSentDto>> SendPlanToRouterAsync(int id, CancellationToken cancellationToken)
+        => SendAsync<PlanSentDto>(HttpMethod.Post, $"api/v1/plans/{id}/send-to-router", null, cancellationToken);
 
     public Task<ApiResponse<NapListDto>> GetNapBoxesAsync(CancellationToken cancellationToken)
         => SendAsync<NapListDto>(HttpMethod.Get, "api/v1/nap-boxes", null, cancellationToken);

@@ -4,7 +4,9 @@ namespace Netora.Domain.Plans;
 /// An internet plan from the catalogue (05.01) and the MikroTik PPP profile it maps to. Agreed 2026-11-26:
 /// <list type="bullet">
 /// <item>Managers add, edit and deactivate plans; Staff see the list. Nothing is ever deleted.</item>
-/// <item>Netora only maps to a profile that already exists on the router; it never creates or changes profiles.</item>
+/// <item>Saving a plan never changes the router. A Manager's "Send to Router" creates the PPP profile if it is missing,
+/// or sets its rate-limit from the plan's speeds; nothing else on the profile is changed and nothing is deleted
+/// (agreed 2026-11-26).</item>
 /// <item>An inactive plan cannot be chosen for new customers or plan changes; customers already on it keep it.</item>
 /// <item>Moving a customer to another plan still needs a Manager-approved Change Plan request (05.02).</item>
 /// </list>

@@ -76,11 +76,45 @@ internal sealed class MockRouterClient(
     /// The mock's PPP profiles: those saved when it was seeded, or for an older state file the profiles its secrets
     /// use. RouterOS always has "default".
     /// </summary>
-    public Task<IReadOnlyList<string>> ListProfilesAsync(CancellationToken cancellationToken)
-        => WithStateAsync<IReadOnlyList<string>>(s =>
-            (s.Profiles ?? s.Secrets.Select(x => x.Profile).OfType<string>().ToList())
-                .Append("default").Distinct(StringComparer.Ordinal).Order(StringComparer.OrdinalIgnoreCase).ToList(),
-            save: false, cancellationToken);
+    public Task<IReadOnlyList<RouterPppProfile>> ListProfilesAsync(CancellationToken cancellationToken)
+        => WithStateAsync<IReadOnlyList<RouterPppProfile>>(s => PppProfiles(s).Select(ToProfile).ToList(), save: false, cancellationToken);
+
+    public Task<RouterPppProfile> CreateProfileAsync(string name, string rateLimit, CancellationToken cancellationToken)
+        => WithStateAsync(s =>
+        {
+            FailIfConfigured();
+            var list = PppProfiles(s);
+            if (list.Any(p => string.Equals(p.Name, name, StringComparison.Ordinal)))
+                throw new RouterException(RouterErrorKind.Rejected, "The router refused the change: failure: profile with the same name already exists");
+            var created = new MockProfile { Id = $"*P{++s.NextId:X}", Name = name, RateLimit = rateLimit };
+            list.Add(created);
+            return ToProfile(created);
+        }, save: true, cancellationToken);
+
+    public Task<RouterPppProfile> UpdateProfileRateLimitAsync(string id, string rateLimit, CancellationToken cancellationToken)
+        => WithStateAsync(s =>
+        {
+            FailIfConfigured();
+            var p = PppProfiles(s).FirstOrDefault(x => x.Id == id) ?? throw new RouterException(RouterErrorKind.NotFound, "The router has no such record.");
+            p.RateLimit = rateLimit;
+            return ToProfile(p);
+        }, save: true, cancellationToken);
+
+    /// <summary>
+    /// The mock's PPP profiles. State files written before profiles were stored get them from the older name list or
+    /// from the profiles their secrets use. RouterOS always has "default".
+    /// </summary>
+    private static List<MockProfile> PppProfiles(MockState s)
+    {
+        if (s.PppProfiles is null)
+        {
+            var names = (s.Profiles ?? s.Secrets.Select(x => x.Profile).OfType<string>().ToList()).Append("default").Distinct(StringComparer.Ordinal);
+            s.PppProfiles = names.Select(n => new MockProfile { Id = $"*P{++s.NextId:X}", Name = n }).ToList();
+        }
+        return s.PppProfiles;
+    }
+
+    private static RouterPppProfile ToProfile(MockProfile p) => new(p.Id, p.Name, p.RateLimit);
 
     private void FailIfConfigured()
     {
@@ -139,11 +173,20 @@ internal sealed class MockRouterClient(
             .Where(c => c.Status == CustomerStatus.Active || c.Status == CustomerStatus.Disabled)
             .OrderBy(c => c.Id).ToListAsync(cancellationToken);
 
-        // Every plan's profile exists on the mock, so Check Router on the Plans page shows them as found.
-        var state = new MockState
+        // Every plan's profile exists on the mock (with the plan's speeds when set), so Check Router Profiles finds them.
+        var plans = await db.InternetPlans.AsNoTracking().ToListAsync(cancellationToken);
+        var state = new MockState { PppProfiles = [] };
+        foreach (var p in plans.GroupBy(p => p.RouterProfile, StringComparer.Ordinal).Select(g => g.First()).Append(null))
         {
-            Profiles = await db.InternetPlans.AsNoTracking().Select(p => p.RouterProfile).Distinct().ToListAsync(cancellationToken),
-        };
+            if (p is null && state.PppProfiles.Any(x => x.Name == "default")) continue;
+            state.PppProfiles.Add(p is null
+                ? new MockProfile { Id = $"*P{++state.NextId:X}", Name = "default" }
+                : new MockProfile
+                {
+                    Id = $"*P{++state.NextId:X}", Name = p.RouterProfile,
+                    RateLimit = p is { UploadMbps: { } up, DownloadMbps: { } down } ? RouterRules.RateLimit(up, down) : null,
+                });
+        }
         foreach (var c in customers)
         {
             state.Secrets.Add(new MockSecret
@@ -178,8 +221,18 @@ internal sealed class MockRouterClient(
         public int NextId { get; set; }
         public List<MockSecret> Secrets { get; set; } = [];
 
-        /// <summary>Null in state files written before module 05.</summary>
+        /// <summary>Profile names from the first module 05 version; replaced by <see cref="PppProfiles"/>.</summary>
         public List<string>? Profiles { get; set; }
+
+        /// <summary>Null in state files written before profiles could be sent to the router.</summary>
+        public List<MockProfile>? PppProfiles { get; set; }
+    }
+
+    private sealed class MockProfile
+    {
+        public string Id { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public string? RateLimit { get; set; }
     }
 
     private sealed class MockSecret

@@ -11,10 +11,15 @@
         <svg class="icon"><use href="#users" /></svg>
         <div>
             <h1>@(Model.IsEdit ? "Edit Internet Plan" : "Add Internet Plan")</h1>
-            <p>@(Model.IsEdit ? $"{Model.Subscribers} subscriber(s) on this plan" : "Add a plan and the MikroTik PPP profile it uses.")</p>
+            <p>@(Model.IsEdit ? $"{Model.Subscribers} subscriber(s) on this plan"
+                 : Model.CopiedFrom is not null ? $"Copied from {Model.CopiedFrom}. Give the new plan its own name and MikroTik profile."
+                 : "Add a plan and the MikroTik PPP profile it uses.")</p>
         </div>
     </div>
-    <div class="heading-actions"><a class="btn btn-outline" href="/plans">Back to plans</a></div>
+    <div class="heading-actions">
+        @if (Model.IsEdit) { <a class="btn btn-outline" href="/plans/new?copyFrom=@Model.Id">Copy Plan</a> }
+        <a class="btn btn-outline" href="/plans">Back to plans</a>
+    </div>
 </div>
 @if (formError is not null)
 {
@@ -24,6 +29,7 @@
 <form method="post" action="@action" novalidate>
     @Html.AntiForgeryToken()
     <input asp-for="ConcurrencyStamp" type="hidden">
+    @if (Model.CopiedFrom is not null) { <input asp-for="CopiedFrom" type="hidden"> }
     <section class="panel module-panel">
         <div class="module-head"><h2>Plan Details</h2></div>
         <div class="module-fields">
@@ -40,7 +46,7 @@
             <button class="btn btn-primary" type="submit">@(Model.IsEdit ? "Save Plan" : "Add Plan")</button>
             <a class="btn btn-outline" href="/plans">Cancel</a>
         </div>
-        <p class="module-note">The profile must already exist on the router with this exact name; Netora does not create it. Use Check Router Profiles on the plans page to confirm.</p>
+        <p class="module-note">Each plan needs its own MikroTik profile name; a name another plan already uses is refused. Saving does not change the router. To create this profile on the router, or set its rate-limit to these speeds, use <strong>Send to Router</strong> on the plans page after saving.</p>
         @if (Model.IsEdit && Model.Subscribers > 0)
         {
             <p class="module-note" role="status">@Model.Subscribers customer(s) use this plan. Changing the profile (now <strong>@Model.SavedRouterProfile</strong>) does not resend them to the router: they show a Configuration Mismatch until a Manager-approved change is sent. Deactivating keeps them on the plan.</p>

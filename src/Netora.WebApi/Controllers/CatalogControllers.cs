@@ -13,10 +13,16 @@ namespace Netora.WebApi.Controllers;
 [Route("api/v1/plans")]
 public sealed class PlansController(IPlanService plans) : ControllerBase
 {
+    /// <summary>All plans. sortBy: plan, fee or profile (anything else: active first, then name); sortDir: asc or desc.</summary>
     [HttpGet]
     [ProducesResponseType(typeof(ApiResponse<PlanListDto>), StatusCodes.Status200OK)]
-    public async Task<IActionResult> List(CancellationToken cancellationToken)
-        => Ok(ApiResponse<PlanListDto>.Ok(await plans.ListAsync(this.IsManager(), cancellationToken), HttpContext.TraceIdentifier));
+    public async Task<IActionResult> List([FromQuery] string? sortBy, [FromQuery] string? sortDir, CancellationToken cancellationToken)
+    {
+        var column = PlanSort.Columns.Contains(sortBy?.Trim().ToLowerInvariant()) ? sortBy!.Trim().ToLowerInvariant() : null;
+        var result = await plans.ListAsync(this.IsManager(), cancellationToken, column,
+            string.Equals(sortDir, "desc", StringComparison.OrdinalIgnoreCase));
+        return Ok(ApiResponse<PlanListDto>.Ok(result, HttpContext.TraceIdentifier));
+    }
 
     [HttpGet("{id:int}")]
     [ProducesResponseType(typeof(ApiResponse<PlanDetailDto>), StatusCodes.Status200OK)]
@@ -45,7 +51,31 @@ public sealed class PlansController(IPlanService plans) : ControllerBase
     public async Task<IActionResult> Update(int id, [FromBody] SavePlanRequest request, CancellationToken cancellationToken)
         => CatalogResultMapper.Map(this, await plans.UpdateAsync(id, request, this.Actor(), cancellationToken), "Plan");
 
-    /// <summary>Lists the router's PPP profiles and shows which plans' profiles exist. Changes nothing.</summary>
+    /// <summary>
+    /// Creates the plan's PPP profile on the router if it is missing, or sets its rate-limit to the plan's speeds
+    /// (upload/download). Changes nothing else and never deletes. 400 when the plan has no speeds; 502 when the router fails.
+    /// </summary>
+    [HttpPost("{id:int}/send-to-router")]
+    [Authorize(Policy = Policies.ManagerOnly)]
+    [ProducesResponseType(typeof(ApiResponse<PlanSentDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<PlanSentDto>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse<PlanSentDto>), StatusCodes.Status502BadGateway)]
+    public async Task<IActionResult> SendToRouter(int id, CancellationToken cancellationToken)
+    {
+        var result = await plans.SendProfileToRouterAsync(id, this.Actor(), cancellationToken);
+        var t = HttpContext.TraceIdentifier;
+        return result.Outcome switch
+        {
+            CatalogOutcome.Ok => Ok(ApiResponse<PlanSentDto>.Ok(result.Data!, t)),
+            CatalogOutcome.ValidationFailed => BadRequest(ApiResponse<PlanSentDto>.Fail("validation_failed", "One or more validation errors occurred.", t, result.Errors)),
+            CatalogOutcome.NotFound => NotFound(ApiResponse<PlanSentDto>.Fail("not_found", "Plan not found.", t)),
+            CatalogOutcome.Forbidden => StatusCode(StatusCodes.Status403Forbidden, ApiResponse<PlanSentDto>.Fail("forbidden", "Only Managers can change this.", t)),
+            CatalogOutcome.RouterFailed => StatusCode(StatusCodes.Status502BadGateway, ApiResponse<PlanSentDto>.Fail("router_failed", result.Error ?? "The router failed.", t)),
+            _ => throw new InvalidOperationException($"Unhandled outcome {result.Outcome}"),
+        };
+    }
+
+    /// <summary>Lists the router's PPP profiles and shows which plans' profiles exist and whether their speeds match. Changes nothing.</summary>
     [HttpGet("router-check")]
     [Authorize(Policy = Policies.ManagerOnly)]
     [ProducesResponseType(typeof(ApiResponse<PlanProfileCheckDto>), StatusCodes.Status200OK)]

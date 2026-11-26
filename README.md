@@ -245,7 +245,10 @@ Netora talks to one RouterOS 7 router over the REST API (HTTPS). It never delete
 
 ## Internet Plans and NAP Boxes
 
-- **Plans:** each plan has a name, monthly fee (₱), download and upload speed, and the exact name of a PPP profile that already exists on the router. Netora sends that profile when it creates or updates a customer's PPPoE secret; it never creates or changes profiles. **Check Router Profiles** on the plans page lists which profiles exist on the router.
+- **Plans:** each plan has a name, monthly fee (₱), download and upload speed, and the name of a PPP profile on the router. Netora sends that profile name when it creates or updates a customer's PPPoE secret.
+- **Send to Router** (Managers only, per plan, after a confirmation) creates the plan's PPP profile on the router if it is missing, or sets its `rate-limit` to the plan's speeds, written as upload/download (`60M/110M` for 110 down, 60 up). Nothing else on the profile changes and nothing is deleted. Saving a plan alone never changes the router. Customers already connected get the new speed when they reconnect. **Check Router Profiles** lists every plan's profile as Found, Missing or Speed differs.
+- The plan list sorts by **Plan**, **Monthly Fee** or **MikroTik Profile** (click a column header; click again to reverse). Plans without a fee are listed last.
+- **Copy** on a plan (or **Copy Plan** on its edit page) opens Add Internet Plan filled in from that plan. Each plan needs its own MikroTik profile, so saving a copy (or an edit) with a profile another plan already uses is refused with the name of that plan.
 - **Changing a plan** in the catalogue needs no approval and does not resend customers. If the profile changes, customers on the plan show a Configuration Mismatch until a Manager-approved change is sent for them. Moving a customer to another plan is still a Change Plan request.
 - **NAP boxes:** code, area, description and status. No ports or capacity are tracked. **UNKNOWN** is built in and cannot be edited; imported accounts start there. Staff and Managers move customers between NAP boxes from the NAP details page or the customer form; no approval, no router change.
 - **Inactive** plans and NAP boxes cannot be chosen for new customers, plan changes or moves; customers already on them keep them. Nothing is deleted.
@@ -254,11 +257,24 @@ Netora talks to one RouterOS 7 router over the REST API (HTTPS). It never delete
 
 ### Connecting a real router
 
-1. On the router, create a dedicated user for Netora (a group with `read`, `write`, `api` and `rest-api` policies), enable the `www-ssl` service with a certificate, and restrict `www-ssl` to the Netora server's address (`/ip service set www-ssl address=<server-ip>/32`).
-2. In `src/Netora.WebApi/appsettings.json` (or `appsettings.Production.json` on the server), set `"Router": { "Mode": "RouterOS" }` and restart the API.
+1. On the router (Winbox Terminal), set the clock first (`/system ntp client set enabled=yes servers=pool.ntp.org`), because certificates take their dates from it. Then create a certificate, enable `www-ssl` with it for the Netora server's address only, and add a dedicated user:
+   ```
+   /certificate add name=netora-ca common-name=netora-ca key-usage=key-cert-sign,crl-sign days-valid=3650
+   /certificate sign netora-ca
+   /certificate add name=router-https common-name=<router-ip> subject-alt-name=IP:<router-ip> days-valid=3650
+   /certificate sign router-https ca=netora-ca
+   /ip service set www-ssl certificate=router-https disabled=no address=<server-ip>/32
+   /user group add name=netora policy=read,write,api,rest-api
+   /user add name=netora group=netora address=<server-ip>/32 password=<strong password>
+   /certificate print detail where name=router-https
+   ```
+   The last command shows the `fingerprint` to enter in Settings. Netora uses the REST API on `www-ssl` only; `api`, `api-ssl` and plain `www` are not needed.
+2. Switch the API to the real router and restart it. The Settings page stops showing "Mock router".
+   - Dev PC (only this machine, the repo keeps `Mock`): `dotnet user-secrets set "Router:Mode" "RouterOS" --project src/Netora.WebApi`. Back to the mock: `dotnet user-secrets remove "Router:Mode" --project src/Netora.WebApi`.
+   - Server: `"Router": { "Mode": "RouterOS" }` in `appsettings.Production.json`.
 3. In **Settings**, enter the router address, HTTPS port, API user name and password. If the router uses a self-signed certificate, also enter its SHA-256 fingerprint; only that exact certificate is then accepted.
 4. Press **Test Connection**. It should report the router's identity and RouterOS version.
-5. On **Internet Plans**, set each plan's MikroTik profile to a profile that exists on the router, then press **Check Router Profiles**.
+5. On **Internet Plans**, enter each plan's speeds and profile name, press **Send to Router** on each plan (creates or updates the profile's rate-limit), then **Check Router Profiles**.
 6. Use **PPPoE Management > Import Accounts** to bring existing secrets into Netora (scan, review, confirm).
 
 ## Run locally
@@ -311,4 +327,7 @@ dotnet ef database update      --project src/Netora.Infrastructure --startup-pro
 | API stops with "Connection string ... is not configured" | The secret is missing on this machine. Check `dotnet user-secrets list --project src/Netora.WebApi`, or `appsettings.Secrets.json` in the API folder |
 | `https://<host>:7225/` returns 401 | Expected: the API has no page at `/` and requires sign-in. Use `/swagger` or `/api/v1/health` |
 | The WebUI cannot call the API over https | Run `dotnet dev-certs https --trust` once |
+| Test Connection still says "Mock router" | The API was started before `Router:Mode` was changed. Restart it |
+| "The SSL connection could not be established" and an AVG popup about `https://<router-ip>/` | AVG Web Shield intercepts the HTTPS connection and replaces the router's certificate, so the fingerprint never matches. Add an exception for `https://<router-ip>/*` in AVG (Web Shield > Exceptions) |
+| AVG or Netora says the router certificate (or its issuer) has expired | The router's clock was wrong when the certificate was made. Set the clock (NTP), remove and recreate both certificates, and enter the new fingerprint |
 | No log file appears | Check the console for `Netora file log: could not write to ...`, and that the app account may write to `Logging:File:Path` |

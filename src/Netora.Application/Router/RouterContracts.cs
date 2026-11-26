@@ -64,9 +64,18 @@ public interface IRouterClient
 
     Task<RouterActiveSession?> FindActiveSessionAsync(string name, CancellationToken cancellationToken);
 
-    /// <summary>Names of the router's PPP profiles (/ppp/profile). Read only: Netora never creates or changes profiles.</summary>
-    Task<IReadOnlyList<string>> ListProfilesAsync(CancellationToken cancellationToken);
+    /// <summary>The router's PPP profiles (/ppp/profile).</summary>
+    Task<IReadOnlyList<RouterPppProfile>> ListProfilesAsync(CancellationToken cancellationToken);
+
+    /// <summary>Creates a PPP profile with only a name and a rate-limit. Used by a Manager's "Send to Router" on a plan.</summary>
+    Task<RouterPppProfile> CreateProfileAsync(string name, string rateLimit, CancellationToken cancellationToken);
+
+    /// <summary>Sets only the rate-limit of an existing profile; every other profile setting is left as it is. Never deletes.</summary>
+    Task<RouterPppProfile> UpdateProfileRateLimitAsync(string id, string rateLimit, CancellationToken cancellationToken);
 }
+
+/// <param name="RateLimit">RouterOS "rate-limit", for example "60M/60M" (upload/download from the customer's side). Null when unlimited.</param>
+public sealed record RouterPppProfile(string Id, string Name, string? RateLimit);
 
 /// <summary>Sends an approved request to the router and records the outcome on the request (08.04, 04.05).</summary>
 public interface IRouterProvisioner
@@ -137,6 +146,19 @@ public static class RouterRules
         => string.IsNullOrWhiteSpace(comment) ? Marker(customerId) : $"{comment.Trim()} {Marker(customerId)}";
 
     /// <summary>The comment without Netora's marker, for comparing and importing.</summary>
+    /// <summary>
+    /// RouterOS rate-limit for a plan. RouterOS writes it from the router's side as rx/tx, which for a PPP customer is
+    /// upload/download: a 50 Mbps down, 10 Mbps up plan is "10M/50M".
+    /// </summary>
+    public static string RateLimit(int uploadMbps, int downloadMbps) => $"{uploadMbps}M/{downloadMbps}M";
+
+    /// <summary>Compares only the rx/tx rates (the first part); burst settings after a space are ignored.</summary>
+    public static bool SameRateLimit(string? a, string? b)
+    {
+        static string Rates(string? v) => (v ?? string.Empty).Trim().Split(' ', 2)[0];
+        return string.Equals(Rates(a), Rates(b), StringComparison.OrdinalIgnoreCase);
+    }
+
     public static string? StripMarker(string? comment)
     {
         if (string.IsNullOrWhiteSpace(comment)) return null;
