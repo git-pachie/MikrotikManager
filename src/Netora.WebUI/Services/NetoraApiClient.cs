@@ -50,6 +50,7 @@ public interface INetoraApiClient
     Task<ApiResponse<UserDetailDto>> GetUserAsync(string id, CancellationToken cancellationToken);
     Task<ApiResponse<UserChangedDto>> CreateUserAsync(CreateUserRequest request, CancellationToken cancellationToken);
     Task<ApiResponse<UserChangedDto>> UpdateUserAsync(string id, UpdateUserRequest request, CancellationToken cancellationToken);
+    Task<ApiResponse<UserChangedDto>> DeleteUserAsync(string id, DeleteUserRequest request, CancellationToken cancellationToken);
     Task<ApiResponse<UserChangedDto>> ResetUserPasswordAsync(string id, ResetPasswordRequest request, CancellationToken cancellationToken);
     Task<ApiResponse<ProfileDto>> GetProfileAsync(CancellationToken cancellationToken);
     Task<ApiResponse<ChangedDto>> UpdateProfileAsync(UpdateProfileRequest request, CancellationToken cancellationToken);
@@ -192,6 +193,9 @@ public sealed class NetoraApiClient(HttpClient httpClient, ILogger<NetoraApiClie
 
     public Task<ApiResponse<UserChangedDto>> UpdateUserAsync(string id, UpdateUserRequest request, CancellationToken cancellationToken)
         => SendAsync<UserChangedDto>(HttpMethod.Put, $"api/v1/users/{Uri.EscapeDataString(id)}", request, cancellationToken);
+
+    public Task<ApiResponse<UserChangedDto>> DeleteUserAsync(string id, DeleteUserRequest request, CancellationToken cancellationToken)
+        => SendAsync<UserChangedDto>(HttpMethod.Delete, $"api/v1/users/{Uri.EscapeDataString(id)}", request, cancellationToken);
 
     public Task<ApiResponse<UserChangedDto>> ResetUserPasswordAsync(string id, ResetPasswordRequest request, CancellationToken cancellationToken)
         => SendAsync<UserChangedDto>(HttpMethod.Post, $"api/v1/users/{Uri.EscapeDataString(id)}/reset-password", request, cancellationToken);

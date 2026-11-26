@@ -2,6 +2,7 @@
 @{
     ViewData["Title"] = "User Management";
     ViewData["Nav"] = "users";
+    var currentUserId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
 }
 <div class="heading">
     <div class="heading-title">
@@ -49,7 +50,13 @@
                             <span class="pill @UserLabels.StatusPill(u)">@UserLabels.Status(u)</span>
                             @if (u.MustChangePassword && u.IsActive) { <span class="pill pending" title="Has a temporary password">New password needed</span> }
                         </td>
-                        <td><a class="btn btn-primary" href="/users/@u.Id/edit">Edit</a></td>
+                        <td>
+                            <a class="btn btn-primary" href="/users/@u.Id/edit">Edit</a>
+                            @if (u.Id != currentUserId)
+                            {
+                                <a class="btn btn-outline" href="/users/@u.Id/delete" aria-label="Delete @u.UserName">Delete</a>
+                            }
+                        </td>
                     </tr>
                 }
             </tbody>

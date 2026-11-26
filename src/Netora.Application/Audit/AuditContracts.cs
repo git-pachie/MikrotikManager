@@ -64,6 +64,7 @@ public static class AuditLabels
         ["ProfileUpdated"] = "Edited own profile",
         ["UserCreated"] = "Added user",
         ["UserUpdated"] = "Edited user",
+        ["UserDeleted"] = "Deleted user",
         ["RoleChanged"] = "Changed role",
         ["UserDeactivated"] = "Disabled user",
         ["UserReactivated"] = "Enabled user",

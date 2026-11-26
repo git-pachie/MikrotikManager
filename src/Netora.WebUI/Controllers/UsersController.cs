@@ -90,6 +90,34 @@ public class UsersController(INetoraApiClient apiClient) : Controller
         return Redirect($"/users/{Uri.EscapeDataString(id)}/edit");
     }
 
+    [HttpGet("/users/{id}/delete")]
+    public async Task<IActionResult> ConfirmDelete(string id, CancellationToken cancellationToken)
+    {
+        if (!IsManager) return Denied();
+        var result = await apiClient.GetUserAsync(id, cancellationToken);
+        if (result.Error?.Code == "not_found") return NotFoundPage();
+        if (result.Data is { IsCurrentUser: false } user) return View("Delete", user);
+
+        TempData[CustomersController.ErrorKey] = result.Data is { IsCurrentUser: true }
+            ? "You cannot delete your own account."
+            : "The user could not be loaded. " + result.Error?.Message;
+        return Redirect("/users");
+    }
+
+    [HttpPost("/users/{id}/delete")]
+    public async Task<IActionResult> Delete(string id, string? concurrencyStamp, CancellationToken cancellationToken)
+    {
+        if (!IsManager) return Denied();
+        var result = await apiClient.DeleteUserAsync(id, new DeleteUserRequest(concurrencyStamp ?? string.Empty), cancellationToken);
+        if (result.Error?.Code == "not_found") return NotFoundPage();
+
+        TempData[result.Success ? CustomersController.ToastKey : CustomersController.ErrorKey] = result.Success
+            ? "User deleted."
+            : "The user could not be deleted. " + string.Join(" ", result.Error?.Details?.SelectMany(d => d.Value)
+                ?? [result.Error?.Message ?? "Unexpected error."]);
+        return Redirect("/users");
+    }
+
     private bool IsManager => User.IsInRole("Manager");
 
     private ViewResult FormAgain(UserFormViewModel model)

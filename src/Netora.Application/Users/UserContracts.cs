@@ -35,6 +35,8 @@ public sealed record CreateUserRequest(string UserName, string DisplayName, stri
 
 public sealed record UpdateUserRequest(string DisplayName, string? Email, string Role, bool IsActive, string ConcurrencyStamp);
 
+public sealed record DeleteUserRequest(string ConcurrencyStamp);
+
 public sealed record ResetPasswordRequest(string TemporaryPassword);
 
 public sealed record ProfileDto(string Id, string UserName, string DisplayName, string? Email, string Role, string? ThemePreference,
@@ -62,6 +64,8 @@ public enum UserOutcome
     /// <summary>Managers cannot demote, deactivate or reset themselves here; they use My Profile.</summary>
     SelfChangeNotAllowed,
 
+    SelfDeleteNotAllowed,
+
     /// <summary>The current password given for a password change is wrong.</summary>
     WrongPassword,
 }
@@ -77,6 +81,7 @@ public interface IUserAdminService
     Task<UserDetailDto?> GetAsync(string id, string actorUserId, CancellationToken cancellationToken);
     Task<UserResult> CreateAsync(CreateUserRequest request, ActorInfo actor, CancellationToken cancellationToken);
     Task<UserResult> UpdateAsync(string id, UpdateUserRequest request, ActorInfo actor, CancellationToken cancellationToken);
+    Task<UserResult> DeleteAsync(string id, DeleteUserRequest request, ActorInfo actor, CancellationToken cancellationToken);
     Task<UserResult> ResetPasswordAsync(string id, ResetPasswordRequest request, ActorInfo actor, CancellationToken cancellationToken);
 }
 

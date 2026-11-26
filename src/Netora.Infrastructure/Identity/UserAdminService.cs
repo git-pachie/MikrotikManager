@@ -1,9 +1,12 @@
+using System.Data;
 using FluentValidation;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Netora.Application.Abstractions;
 using Netora.Application.Auth;
+using Netora.Application.Logging;
 using Netora.Application.Users;
 using Netora.Domain.Security;
 using Netora.Infrastructure.Persistence;
@@ -11,8 +14,8 @@ using Netora.Infrastructure.Persistence;
 namespace Netora.Infrastructure.Identity;
 
 /// <summary>
-/// Manager-controlled user administration (13.01). Rules: a Manager cannot demote, deactivate or reset their own
-/// account here (My Profile is for that); the last active Manager cannot be demoted or deactivated; role changes,
+/// Manager-controlled user administration (13.01). A Manager cannot demote, deactivate, reset or delete their own
+/// account. The last active Manager cannot be demoted, deactivated or deleted. Role changes,
 /// deactivation and password resets rotate the security stamp, so the user's open sessions stop working at once.
 /// </summary>
 internal sealed class UserAdminService(
@@ -21,7 +24,8 @@ internal sealed class UserAdminService(
     IValidator<CreateUserRequest> createValidator,
     IValidator<UpdateUserRequest> updateValidator,
     ISecurityEventWriter events,
-    ILogger<UserAdminService> logger) : IUserAdminService
+    ILogger<UserAdminService> logger,
+    IActivityLog? activity = null) : IUserAdminService
 {
     public async Task<UserListDto> ListAsync(CancellationToken cancellationToken)
     {
@@ -96,11 +100,6 @@ internal sealed class UserAdminService(
         if (user.Id == actor.UserId && (roleChanged || !request.IsActive))
             return new UserResult(UserOutcome.SelfChangeNotAllowed);
 
-        // Losing a Manager: the account is an active Manager and stops being one.
-        if (currentRole == Roles.Manager && user.IsActive && (request.Role != Roles.Manager || !request.IsActive)
-            && await OtherActiveManagersAsync(user.Id, cancellationToken) == 0)
-            return new UserResult(UserOutcome.LastManager);
-
         var email = Clean(request.Email);
         if (email is not null && !string.Equals(email, user.Email, StringComparison.OrdinalIgnoreCase)
             && await EmailTakenAsync(email, user.Id, cancellationToken))
@@ -110,13 +109,18 @@ internal sealed class UserAdminService(
         var detailsChanged = displayName != user.DisplayName || !string.Equals(email, user.Email, StringComparison.Ordinal);
         if (!detailsChanged && !roleChanged && !activeChanged) return new UserResult(UserOutcome.NoChanges, UserId: user.Id);
 
-        user.DisplayName = displayName;
-        SetEmail(user, email);
-        user.IsActive = request.IsActive;
-
-        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         try
         {
+            // Protect the last-Manager check through commit, including concurrent deletions.
+            await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+            if (currentRole == Roles.Manager && user.IsActive && (roleChanged || !request.IsActive)
+                && await OtherActiveManagersAsync(user.Id, cancellationToken) == 0)
+                return new UserResult(UserOutcome.LastManager);
+
+            user.DisplayName = displayName;
+            SetEmail(user, email);
+            user.IsActive = request.IsActive;
+
             if (roleChanged)
             {
                 if (Roles.All.Contains(currentRole)) Check(await users.RemoveFromRoleAsync(user, currentRole));
@@ -132,7 +136,7 @@ internal sealed class UserAdminService(
                     : IdentityFailure(saved, string.Empty);
             await transaction.CommitAsync(cancellationToken);
         }
-        catch (DbUpdateConcurrencyException)
+        catch (Exception ex) when (IsConcurrentWrite(ex))
         {
             return new UserResult(UserOutcome.Conflict);
         }
@@ -143,6 +147,55 @@ internal sealed class UserAdminService(
             await Event(request.IsActive ? SecurityEventTypes.UserReactivated : SecurityEventTypes.UserDeactivated, user, actor, null, cancellationToken);
         logger.LogInformation("UserUpdated UserId={UserId} RoleChanged={RoleChanged} Active={Active} ActorUserId={ActorUserId}",
             user.Id, roleChanged, user.IsActive, actor.UserId);
+        return new UserResult(UserOutcome.Ok, UserId: user.Id);
+    }
+
+    public async Task<UserResult> DeleteAsync(string id, DeleteUserRequest request, ActorInfo actor, CancellationToken cancellationToken)
+    {
+        if (id == actor.UserId) return new UserResult(UserOutcome.SelfDeleteNotAllowed);
+        if (string.IsNullOrWhiteSpace(request.ConcurrencyStamp) || request.ConcurrencyStamp.Length > 64)
+            return Field(UserOutcome.ValidationFailed, nameof(DeleteUserRequest.ConcurrencyStamp), "Reload the confirmation page and try again.");
+
+        var user = await users.FindByIdAsync(id);
+        if (user is null) return new UserResult(UserOutcome.NotFound);
+        if (!string.Equals(user.ConcurrencyStamp, request.ConcurrencyStamp, StringComparison.Ordinal))
+            return new UserResult(UserOutcome.Conflict);
+
+        var audit = new SecurityEvent
+        {
+            TimestampUtc = DateTimeOffset.UtcNow,
+            EventType = SecurityEventTypes.UserDeleted,
+            Succeeded = true,
+            UserId = user.Id,
+            UserName = SecurityEventWriter.Sanitize(user.UserName),
+            IpAddress = actor.IpAddress,
+            Reason = Truncate($"by {actor.UserName}", 128),
+        };
+
+        try
+        {
+            await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+            if (user.IsActive && await users.IsInRoleAsync(user, Roles.Manager)
+                && await OtherActiveManagersAsync(user.Id, cancellationToken) == 0)
+                return new UserResult(UserOutcome.LastManager);
+
+            // The Identity store saves the delete and the audit record in the same unit of work.
+            db.SecurityEvents.Add(audit);
+            var deleted = await users.DeleteAsync(user);
+            if (!deleted.Succeeded)
+            {
+                db.ChangeTracker.Clear();
+                return new UserResult(UserOutcome.Conflict);
+            }
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch (Exception ex) when (IsConcurrentWrite(ex))
+        {
+            db.ChangeTracker.Clear();
+            return new UserResult(UserOutcome.Conflict);
+        }
+
+        (activity ?? NullActivityLog.Instance).Write(SecurityEventWriter.ToActivity(audit.EventType, true, audit.UserId, audit.UserName, audit.Reason));
         return new UserResult(UserOutcome.Ok, UserId: user.Id);
     }
 
@@ -201,7 +254,10 @@ internal sealed class UserAdminService(
     private Task<bool> EmailTakenAsync(string email, string? exceptUserId, CancellationToken ct) => EmailTakenAsync(db, email, exceptUserId, ct);
 
     private async Task<string> RoleOfAsync(ApplicationUser user)
-        => (await users.GetRolesAsync(user)).FirstOrDefault(r => Roles.All.Contains(r)) ?? "None";
+    {
+        var roles = await users.GetRolesAsync(user);
+        return roles.Contains(Roles.Manager) ? Roles.Manager : roles.FirstOrDefault(r => Roles.All.Contains(r)) ?? "None";
+    }
 
     private async Task<Dictionary<string, string>> RolesByUserAsync(CancellationToken ct)
     {
@@ -226,6 +282,9 @@ internal sealed class UserAdminService(
             Truncate(detail is null ? $"by {actor.UserName}" : $"{detail}, by {actor.UserName}", 128), ct);
 
     private static string Truncate(string v, int max) => v.Length <= max ? v : v[..max];
+
+    private static bool IsConcurrentWrite(Exception ex)
+        => ex is DbUpdateConcurrencyException || ex.GetBaseException() is SqlException { Number: 1205 };
 
     private static void Check(IdentityResult result)
     {

@@ -8,10 +8,12 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Netora.Application.Abstractions;
+using Netora.Application.Audit;
 using Netora.Application.Auth;
 using Netora.Application.Settings;
 using Netora.Application.Users;
 using Netora.Domain.Settings;
+using Netora.Infrastructure.Audit;
 using Netora.Infrastructure.Approvals;
 using Netora.Infrastructure.Identity;
 using Netora.Infrastructure.Persistence;
@@ -184,6 +186,50 @@ public class UserAndSettingsTests
         Assert.Equal(UserOutcome.SelfChangeNotAllowed, disable.Outcome);
         Assert.Equal(UserOutcome.SelfChangeNotAllowed, reset.Outcome);
         Assert.Equal(UserOutcome.Ok, rename.Outcome);
+    }
+
+    [Fact]
+    public async Task Deleting_a_user_removes_access_and_preserves_audit_history()
+    {
+        using var h = new IdentityTestHost();
+        var boss = await h.AddUserAsync("boss", Roles.Manager);
+        var actor = IdentityTestHost.Actor(boss);
+        var created = await Admin(h, s => s.CreateAsync(new CreateUserRequest("staff", "Staff", null, Roles.Staff,
+            IdentityTestHost.Password), actor, default));
+        var staff = await h.FindAsync("staff");
+        var request = new DeleteUserRequest(staff.ConcurrencyStamp!);
+
+        Assert.Equal(UserOutcome.Ok, (await Admin(h, s => s.DeleteAsync(staff.Id, request, actor, default))).Outcome);
+        Assert.Null(await h.FindAsync("staff"));
+        Assert.Equal(UserOutcome.NotFound, (await Admin(h, s => s.DeleteAsync(staff.Id, request, actor, default))).Outcome);
+        var list = await Use<UserListDto, IUserAdminService>(h, s => s.ListAsync(default));
+        Assert.Equal(0, list.ActiveStaff);
+        Assert.DoesNotContain(list.Items, u => u.Id == staff.Id);
+
+        await using var scope = h.Scope();
+        var audit = new AuditQueries(scope.ServiceProvider.GetRequiredService<NetoraDbContext>());
+        var trail = await audit.ListAsync(new AuditQuery(Search: "staff"), default);
+        Assert.Equal(UserOutcome.Ok, created.Outcome);
+        Assert.Equal(2, trail.TotalMatching);
+        Assert.Contains(trail.Items, entry => entry is { Action: "Added user", Entity: "User staff", EntityLink: null });
+        Assert.Contains(trail.Items, entry => entry is { Action: "Deleted user", Actor: "boss", Entity: "User staff", EntityLink: null });
+    }
+
+    [Fact]
+    public async Task Deletion_rejects_self_deletion_the_last_active_manager_and_stale_confirmation()
+    {
+        using var h = new IdentityTestHost();
+        var boss = await h.AddUserAsync("boss", Roles.Manager);
+        var inactiveManager = await h.AddUserAsync("inactive", Roles.Manager, active: false);
+        var staff = await h.AddUserAsync("staff", Roles.Staff);
+        var actor = IdentityTestHost.Actor(boss);
+        var request = new DeleteUserRequest(boss.ConcurrencyStamp!);
+
+        Assert.Equal(UserOutcome.SelfDeleteNotAllowed, (await Admin(h, s => s.DeleteAsync(boss.Id, request, actor, default))).Outcome);
+        Assert.Equal(UserOutcome.LastManager, (await Admin(h, s => s.DeleteAsync(boss.Id, request, IdentityTestHost.Actor(inactiveManager), default))).Outcome);
+        Assert.Equal(UserOutcome.Conflict, (await Admin(h, s => s.DeleteAsync(staff.Id, new DeleteUserRequest("old-stamp"), actor, default))).Outcome);
+        Assert.NotNull(await h.FindAsync("boss"));
+        Assert.NotNull(await h.FindAsync("staff"));
     }
 
     [Fact]

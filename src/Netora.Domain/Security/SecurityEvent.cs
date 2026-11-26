@@ -29,6 +29,7 @@ public static class SecurityEventTypes
     public const string ManagerBootstrapped = "ManagerBootstrapped";
     public const string UserCreated = "UserCreated";
     public const string UserUpdated = "UserUpdated";
+    public const string UserDeleted = "UserDeleted";
     public const string RoleChanged = "RoleChanged";
     public const string UserDeactivated = "UserDeactivated";
     public const string UserReactivated = "UserReactivated";

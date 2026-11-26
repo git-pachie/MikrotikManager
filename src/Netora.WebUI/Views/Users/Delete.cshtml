@@ -1,0 +1,26 @@
+@model Netora.Application.Users.UserDetailDto
+@{
+    ViewData["Title"] = "Delete User";
+    ViewData["Nav"] = "users";
+    var action = $"/users/{Uri.EscapeDataString(Model.Id)}/delete";
+}
+<div class="detail-breadcrumb"><a href="/users">User Management</a><span> / </span><strong>Delete User</strong></div>
+<div class="heading">
+    <div class="heading-title">
+        <svg class="icon"><use href="#users" /></svg>
+        <div>
+            <h1>Delete User</h1>
+            <p>@Model.UserName</p>
+        </div>
+    </div>
+</div>
+<section class="panel module-panel">
+    <div class="module-head"><h2>Delete @Model.UserName?</h2></div>
+    <p>This permanently deletes the account and ends its sessions. Audit history is kept.</p>
+    <form method="post" action="@action" class="module-actions">
+        @Html.AntiForgeryToken()
+        <input type="hidden" name="concurrencyStamp" value="@Model.ConcurrencyStamp">
+        <button type="submit" class="btn btn-danger text-bg-danger border-danger">Delete User</button>
+        <a class="btn btn-outline" href="/users">Cancel</a>
+    </form>
+</section>

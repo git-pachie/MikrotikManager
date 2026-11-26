@@ -84,11 +84,12 @@ internal sealed class AuditQueries(NetoraDbContext db) : IAuditQueries
     {
         var isSignIn = AuditLabels.SignInEvents.Contains(e.EventType);
         var result = e.Succeeded ? "Success" : "Failed";
+        var userLink = linkedUserName is null ? null : UserLink(e.UserId);
         if (isSignIn)
         {
             var detail = string.Join(", ", new[] { e.Reason, e.IpAddress is null ? null : "IP " + e.IpAddress }.Where(s => !string.IsNullOrEmpty(s)));
             return new AuditEntryDto(e.TimestampUtc, e.UserName ?? "anonymous", AuditCategories.SignIn,
-                e.UserName is null ? "Unknown user" : $"User {e.UserName}", UserLink(e.UserId), AuditLabels.Action(e.EventType), result,
+                e.UserName is null ? "Unknown user" : $"User {e.UserName}", userLink, AuditLabels.Action(e.EventType), result,
                 detail.Length == 0 ? null : detail);
         }
         if (e.EventType == SecurityEventTypes.SettingsUpdated)
@@ -97,7 +98,7 @@ internal sealed class AuditQueries(NetoraDbContext db) : IAuditQueries
 
         var (by, rest) = AuditLabels.SplitBy(e.Reason);
         return new AuditEntryDto(e.TimestampUtc, by ?? (e.EventType == SecurityEventTypes.ManagerBootstrapped ? "system" : "unknown"),
-            AuditCategories.UsersAndSettings, $"User {e.UserName}", UserLink(e.UserId), AuditLabels.Action(e.EventType), result, rest);
+            AuditCategories.UsersAndSettings, $"User {e.UserName}", userLink, AuditLabels.Action(e.EventType), result, rest);
     }
 
     private async Task<(int, List<AuditEntryDto>)> ActivitiesAsync(string? category, DateTimeOffset? from, DateTimeOffset? to,

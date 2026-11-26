@@ -55,6 +55,20 @@ public sealed class UsersController(IUserAdminService users) : ControllerBase
             : UserResultMapper.Failure(this, result);
     }
 
+    /// <summary>Permanently deletes another user account and preserves its audit records.</summary>
+    [HttpDelete("{id}")]
+    [ProducesResponseType(typeof(ApiResponse<UserChangedDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Delete(string id, [FromBody] DeleteUserRequest request, CancellationToken cancellationToken)
+    {
+        var result = await users.DeleteAsync(id, request, Actor, cancellationToken);
+        return result.Outcome == UserOutcome.Ok
+            ? Ok(ApiResponse<UserChangedDto>.Ok(new UserChangedDto(id, true), HttpContext.TraceIdentifier))
+            : UserResultMapper.Failure(this, result);
+    }
+
     /// <summary>Sets a temporary password, unlocks the account and ends its sessions. Not for your own account.</summary>
     [HttpPost("{id}/reset-password")]
     [ProducesResponseType(typeof(ApiResponse<UserChangedDto>), StatusCodes.Status200OK)]
@@ -90,6 +104,7 @@ public static class UserResultMapper
             UserOutcome.LastManager => c.Conflict(ApiResponse<object>.Fail("last_manager", "At least one active Manager must remain.", t)),
             UserOutcome.SelfChangeNotAllowed => c.Conflict(ApiResponse<object>.Fail("self_change_not_allowed",
                 "You cannot change your own role, deactivate yourself or reset your own password here. Use My Profile for your password.", t)),
+            UserOutcome.SelfDeleteNotAllowed => c.Conflict(ApiResponse<object>.Fail("self_delete_not_allowed", "You cannot delete your own account.", t)),
             UserOutcome.WrongPassword => c.BadRequest(ApiResponse<object>.Fail("wrong_password", "The current password is not correct.", t, result.Errors)),
             _ => throw new InvalidOperationException($"Unhandled outcome {result.Outcome}"),
         };
