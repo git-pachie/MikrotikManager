@@ -75,6 +75,7 @@ public interface INetoraApiClient
     Task<ApiResponse<CatalogSavedDto>> CreateNapBoxAsync(SaveNapRequest request, CancellationToken cancellationToken);
     Task<ApiResponse<CatalogSavedDto>> UpdateNapBoxAsync(int id, SaveNapRequest request, CancellationToken cancellationToken);
     Task<ApiResponse<UpdatedCustomerDto>> MoveCustomerNapAsync(int customerId, MoveNapRequest request, CancellationToken cancellationToken);
+    Task<ApiResponse<Netora.Application.Audit.AuditListDto>> GetAuditAsync(Netora.Application.Audit.AuditQuery query, CancellationToken cancellationToken);
 }
 
 public sealed record PppoeChangedDto(bool Changed);
@@ -267,6 +268,17 @@ public sealed class NetoraApiClient(HttpClient httpClient, ILogger<NetoraApiClie
 
     public Task<ApiResponse<UpdatedCustomerDto>> MoveCustomerNapAsync(int customerId, MoveNapRequest request, CancellationToken cancellationToken)
         => SendAsync<UpdatedCustomerDto>(HttpMethod.Put, $"api/v1/customers/{customerId}/nap", request, cancellationToken);
+
+    public Task<ApiResponse<Netora.Application.Audit.AuditListDto>> GetAuditAsync(Netora.Application.Audit.AuditQuery query, CancellationToken cancellationToken)
+    {
+        var parts = new List<string> { $"page={query.Page}", $"pageSize={query.PageSize}" };
+        if (query.From is { } f) parts.Add("from=" + f.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture));
+        if (query.To is { } t) parts.Add("to=" + t.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture));
+        if (!string.IsNullOrWhiteSpace(query.Category)) parts.Add("category=" + Uri.EscapeDataString(query.Category));
+        if (!string.IsNullOrWhiteSpace(query.Actor)) parts.Add("actor=" + Uri.EscapeDataString(query.Actor));
+        if (!string.IsNullOrWhiteSpace(query.Search)) parts.Add("search=" + Uri.EscapeDataString(query.Search));
+        return SendAsync<Netora.Application.Audit.AuditListDto>(HttpMethod.Get, "api/v1/audit?" + string.Join("&", parts), null, cancellationToken);
+    }
 
     public Task<ApiResponse<CustomerListDto>> GetCustomersAsync(CustomerListQuery query, CancellationToken cancellationToken)
     {

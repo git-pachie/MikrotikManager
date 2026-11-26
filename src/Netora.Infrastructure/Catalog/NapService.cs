@@ -90,6 +90,8 @@ internal sealed class NapService(
             return Duplicate();
         }
 
+        await AuditTrail.RecordAsync(db, logger, AuditTrail.New(actor, Domain.Audit.AuditEntityTypes.NapBox, nap.Id, nap.Code, "NapCreated",
+            nap.IsActive ? null : "Inactive"), cancellationToken);
         logger.LogInformation("NapCreated NapBoxId={NapBoxId} ActorUserId={ActorUserId}", nap.Id, actor.UserId);
         Log.Write(new ActivityEvent(ActivityCategories.Nap, "NapCreated", ActivityOutcomes.Success, ActivityTargets.Nap(nap.Id),
             nap.IsActive ? null : "Inactive", Actor: actor.UserName));
@@ -131,6 +133,9 @@ internal sealed class NapService(
         nap.ConcurrencyStamp = Guid.NewGuid().ToString("N");
         nap.UpdatedAtUtc = DateTimeOffset.UtcNow;
         nap.UpdatedByUserId = actor.UserId;
+        db.AuditEvents.Add(AuditTrail.New(actor, Domain.Audit.AuditEntityTypes.NapBox, id, nap.Code, "NapUpdated", "Changed: " + string.Join(", ", changed)));
+        if (wasActive != nap.IsActive)
+            db.AuditEvents.Add(AuditTrail.New(actor, Domain.Audit.AuditEntityTypes.NapBox, id, nap.Code, nap.IsActive ? "NapReactivated" : "NapDeactivated", null));
         try
         {
             await db.SaveChangesAsync(cancellationToken);

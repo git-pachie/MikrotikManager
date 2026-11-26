@@ -89,3 +89,8 @@ a.profile{color:inherit;text-decoration:none}a.profile:hover .profile-name{color
 /* Implementation addition (module 05): Edit and Send to Router side by side in the plan table. */
 .plan-actions{display:flex;align-items:center;gap:8px;flex-wrap:nowrap}
 .plan-actions form{margin:0}
+/* Implementation addition (module 12): Audit Trail filters and the category/detail line under each action. */
+.audit-filter input[type=date]{width:150px}
+.audit-filter select{max-width:180px}
+.audit-detail{font-size:11.5px;margin-top:2px;max-width:420px;overflow-wrap:anywhere}
+.pager-gap{padding:0 4px;color:var(--muted)}

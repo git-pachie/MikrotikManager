@@ -6,6 +6,7 @@ using Netora.Application.Catalog;
 using Netora.Application.Customers;
 using Netora.Application.Logging;
 using Netora.Application.Router;
+using Netora.Domain.Audit;
 using Netora.Domain.Plans;
 using Netora.Infrastructure.Persistence;
 
@@ -87,6 +88,8 @@ internal sealed class PlanService(
             return Duplicate();
         }
 
+        await AuditTrail.RecordAsync(db, logger, AuditTrail.New(actor, AuditEntityTypes.Plan, plan.Id, plan.Name, "PlanCreated",
+            plan.IsActive ? null : "Inactive"), cancellationToken);
         logger.LogInformation("PlanCreated PlanId={PlanId} ActorUserId={ActorUserId}", plan.Id, actor.UserId);
         Log.Write(new ActivityEvent(ActivityCategories.Plans, "PlanCreated", ActivityOutcomes.Success, ActivityTargets.Plan(plan.Id),
             plan.IsActive ? null : "Inactive", Actor: actor.UserName));
@@ -131,6 +134,10 @@ internal sealed class PlanService(
         plan.ConcurrencyStamp = Guid.NewGuid().ToString("N");
         plan.UpdatedAtUtc = DateTimeOffset.UtcNow;
         plan.UpdatedByUserId = actor.UserId;
+        // Saved together with the change, so the trail cannot miss or invent an edit.
+        db.AuditEvents.Add(AuditTrail.New(actor, AuditEntityTypes.Plan, id, plan.Name, "PlanUpdated", "Changed: " + string.Join(", ", changed)));
+        if (wasActive != plan.IsActive)
+            db.AuditEvents.Add(AuditTrail.New(actor, AuditEntityTypes.Plan, id, plan.Name, plan.IsActive ? "PlanReactivated" : "PlanDeactivated", null));
         try
         {
             await db.SaveChangesAsync(cancellationToken);
@@ -219,11 +226,15 @@ internal sealed class PlanService(
         catch (RouterException ex)
         {
             RouterError("ProfileSend", ex);
+            await AuditTrail.RecordAsync(db, logger, AuditTrail.New(actor, AuditEntityTypes.Plan, id, plan.Name, "ProfileSendFailed",
+                $"Profile {plan.RouterProfile}: {ex.Kind}", "Failed"), cancellationToken);
             Log.Write(new ActivityEvent(ActivityCategories.Plans, "ProfileSendFailed", ActivityOutcomes.Failure, ActivityTargets.Plan(id),
                 $"error={ex.Kind} mode={router.Mode}", ActivityLevel.Warning, Actor: actor.UserName));
             return new PlanSendResult(CatalogOutcome.RouterFailed, Error: ex.Message);
         }
 
+        await AuditTrail.RecordAsync(db, logger, AuditTrail.New(actor, AuditEntityTypes.Plan, id, plan.Name, "ProfileSentToRouter",
+            $"Profile {plan.RouterProfile} {action.ToLowerInvariant()}, rate-limit {rateLimit} ({router.Mode})"), cancellationToken);
         logger.LogInformation("PlanProfileSent PlanId={PlanId} Action={Action} Mode={Mode} ActorUserId={ActorUserId}", id, action, router.Mode, actor.UserId);
         Log.Write(new ActivityEvent(ActivityCategories.Plans, "ProfileSentToRouter", ActivityOutcomes.Success, ActivityTargets.Plan(id),
             $"{action} rate-limit={rateLimit} mode={router.Mode}", Actor: actor.UserName));

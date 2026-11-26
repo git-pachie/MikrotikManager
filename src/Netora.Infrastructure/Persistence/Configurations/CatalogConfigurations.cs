@@ -21,6 +21,23 @@ internal sealed class InternetPlanConfiguration : IEntityTypeConfiguration<Inter
     }
 }
 
+internal sealed class AuditEventConfiguration : IEntityTypeConfiguration<Domain.Audit.AuditEvent>
+{
+    public void Configure(EntityTypeBuilder<Domain.Audit.AuditEvent> builder)
+    {
+        builder.ToTable("AuditEvents");
+        builder.HasKey(a => a.Id);
+        builder.Property(a => a.ActorUserId).HasMaxLength(450).IsRequired();
+        builder.Property(a => a.ActorUserName).HasMaxLength(256).IsRequired();
+        builder.Property(a => a.EntityType).HasMaxLength(20).IsRequired();
+        builder.Property(a => a.EntityName).HasMaxLength(100).IsRequired();
+        builder.Property(a => a.Action).HasMaxLength(60).IsRequired();
+        builder.Property(a => a.Detail).HasMaxLength(500);
+        builder.Property(a => a.Outcome).HasMaxLength(20).IsRequired();
+        builder.HasIndex(a => a.OccurredAtUtc);
+    }
+}
+
 internal sealed class NapBoxConfiguration : IEntityTypeConfiguration<NapBox>
 {
     public void Configure(EntityTypeBuilder<NapBox> builder)

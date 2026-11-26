@@ -29,6 +29,7 @@ Specs, approved mockups and module prompts are in `Netora-MikroTik-Manager-V2-Pr
 | Users and Settings | `/users`, `/settings` (Managers), `/profile` (everyone) | Add, edit, enable/disable and password reset with a temporary password; router details (password encrypted) and email settings with a test email; own name, email, theme and password |
 
 | MikroTik | `/settings`, `/approvals/{id}`, `/customers/{id}`, `/pppoe/import` | Approved changes sent to the router with Retry, live status and Configuration Mismatch on the customer profile, Test Connection, Import. Uses a mock router until `Router:Mode` is `RouterOS` |
+| Audit Trail | `/audit` (Managers) | Sign-ins, user and settings changes, customer and PPPoE changes, approval steps with router results, plan and NAP changes; filters by date, category, actor and text. Backups are not built yet |
 | Internet Plans | `/plans`, `/plans/new`, `/plans/{id}/edit` | Plan catalogue with fee, speeds and the MikroTik PPP profile each plan maps to; Check Router Profiles. Managers add, edit and deactivate; Staff view |
 | NAP Boxes | `/nap-boxes`, `/nap-boxes/new`, `/nap-boxes/{id}` | NAP list with customer counts, details with assigned customers, move customers between NAP boxes, UNKNOWN review. Managers add and edit; Staff view and move |
 | Logging | none (server files) | Daily text files `netora-api-yyyy-MM-dd.txt` and `netora-web-yyyy-MM-dd.txt`, see [Log files](#log-files) |

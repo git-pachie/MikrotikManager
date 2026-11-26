@@ -16,7 +16,7 @@ public static class NavItems
         new("plans", "/plans", "tag", "Internet Plans"),
         new("onu", "/onu-history", "calendar", "ONU History"),
         new("diagnostics", "/diagnostics", "pulse", "Diagnostics"),
-        new("audit", "/audit", "file", "Audit Trail"),
+        new("audit", "/audit", "file", "Audit Trail", ManagerOnly: true),
         new("users", "/users", "users", "User Management", ManagerOnly: true),
         new("settings", "/settings", "settings", "Settings", ManagerOnly: true),
         new("reports", "/reports", "file", "Reports"),

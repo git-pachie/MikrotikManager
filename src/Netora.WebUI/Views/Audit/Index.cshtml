@@ -1,0 +1,93 @@
+@model AuditViewModel
+@{
+    ViewData["Title"] = "Audit Trail";
+    ViewData["Nav"] = "audit";
+    var data = Model.Data;
+}
+<div class="heading">
+    <div class="heading-title">
+        <svg class="icon"><use href="#users" /></svg>
+        <div>
+            <h1>Audit Trail</h1>
+            <p>Review system actions, approvals, and configuration changes.</p>
+        </div>
+    </div>
+    <div class="heading-actions"><a class="btn btn-outline" href="/customers">Customers</a></div>
+</div>
+
+<section class="panel module-panel">
+    <div class="module-head approval-head">
+        <h2>Audit Events</h2>
+        <form class="approval-filter audit-filter" method="get" action="/audit" role="search">
+            <label class="visually-hidden" for="from">From</label>
+            <input id="from" type="date" name="from" value="@(Model.From is { } f ? AuditViewModel.Date(f) : "")" aria-label="From date">
+            <label class="visually-hidden" for="to">To</label>
+            <input id="to" type="date" name="to" value="@(Model.To is { } t ? AuditViewModel.Date(t) : "")" aria-label="To date">
+            <select name="category" aria-label="Category">
+                <option value="">All categories</option>
+                @foreach (var c in Netora.Application.Audit.AuditCategories.All)
+                {
+                    <option value="@c" selected="@(c == Model.Category)">@c</option>
+                }
+            </select>
+            <input type="search" name="actor" value="@Model.Actor" maxlength="100" placeholder="Actor" aria-label="Actor">
+            <input type="search" name="search" value="@Model.Search" maxlength="100" placeholder="Customer, action or detail" aria-label="Search">
+            <button type="submit" class="btn btn-primary">Filter</button>
+            @if (Model.Filtered) { <a class="btn btn-outline" href="/audit">Clear</a> }
+        </form>
+    </div>
+    @if (Model.ErrorMessage is not null)
+    {
+        <div class="form-alert" role="alert">@Model.ErrorMessage</div>
+    }
+    @if (data is not null)
+    {
+        <div class="table-scroll">
+            <table class="customers-table all-table">
+                <thead><tr><th>Date / Time</th><th>Actor</th><th>Entity</th><th>Action</th><th>Result</th></tr></thead>
+                <tbody>
+                    @if (data.Items.Count == 0)
+                    {
+                        <tr><td colspan="5" style="text-align:center;padding:28px">@(Model.Filtered ? "No matching events." : "No events recorded yet.")</td></tr>
+                    }
+                    @foreach (var e in data.Items)
+                    {
+                        <tr>
+                            <td>@AuditViewModel.When(e.OccurredAtUtc)</td>
+                            <td>@e.Actor</td>
+                            <td>@if (e.EntityLink is not null) { <a class="customer-link" href="@e.EntityLink">@e.Entity</a> } else { @e.Entity }</td>
+                            <td>
+                                @e.Action
+                                <div class="detail-secondary audit-detail">@e.Category@(string.IsNullOrEmpty(e.Detail) ? "" : " · " + e.Detail)</div>
+                            </td>
+                            <td><span class="pill @AuditViewModel.ResultPill(e.Result)">@e.Result</span></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        @if (Model.TotalPages > 1)
+        {
+            var first = (data.Page - 1) * data.PageSize + 1;
+            var last = Math.Min(data.Page * data.PageSize, data.TotalMatching);
+            <div class="pagination-bar">
+                <div>Showing @first to @last of @data.TotalMatching events</div>
+                <nav class="pager" aria-label="Pagination">
+                    @{ var previous = 0; }
+                    @foreach (var p in Model.PageLinks())
+                    {
+                        if (previous != 0 && p - previous > 1) { <span class="pager-gap" aria-hidden="true">…</span> }
+                        <a class="pager-link @(p == data.Page ? "active" : null)" href="@Model.PageUrl(p)" aria-current="@(p == data.Page ? "page" : null)">@p</a>
+                        previous = p;
+                    }
+                </nav>
+            </div>
+        }
+    }
+</section>
+
+<section class="panel module-panel">
+    <div class="module-head"><h2>Audit Retention</h2></div>
+    <p>Changes retain the actor, timestamp, request details, approval decision, and router provisioning outcome.</p>
+    <p class="module-note">The trail combines sign-ins and user administration, customer and PPPoE changes, approval steps with their router results, and Internet Plan and NAP Box changes. Records are never edited or deleted, and only Managers can open this page. Times are the server's local time. Older entries beyond 200 pages are reached by narrowing the date range.</p>
+</section>

@@ -83,6 +83,7 @@ public static class DependencyInjection
         services.AddScoped<Netora.Application.Settings.ISettingsService, Settings.SettingsService>();
         services.AddScoped<Netora.Application.Catalog.IPlanService, Catalog.PlanService>();
         services.AddScoped<Netora.Application.Catalog.INapService, Catalog.NapService>();
+        services.AddScoped<Netora.Application.Audit.IAuditQueries, Audit.AuditQueries>();
 
         // Router (module 09). Router:Mode must be set explicitly, so mock results can never pass for a real router.
         var routerMode = configuration[$"{Router.RouterOptions.SectionName}:Mode"];
