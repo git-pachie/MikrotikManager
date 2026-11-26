@@ -45,9 +45,9 @@ internal sealed class PppoeCommands(
             return new(PppoeOutcome.Conflict);
 
         var username = request.PppoeUsername.Trim();
-        var plan = request.PlanName.Trim();
+        var planName = request.PlanName.Trim();
         var usernameChanged = !string.Equals(username, customer.PppoeUsername, StringComparison.Ordinal);
-        var planChanged = !string.Equals(plan, customer.PlanName, StringComparison.Ordinal);
+        var planChanged = !string.Equals(planName, customer.Plan.Name, StringComparison.Ordinal);
 
         if (customer.ServiceFieldsLocked && (usernameChanged || planChanged))
         {
@@ -57,6 +57,11 @@ internal sealed class PppoeCommands(
             if (planChanged) errors[nameof(UpdatePppoeRequest.PlanName)] = [message];
             return new(PppoeOutcome.ServiceFieldsLocked, errors);
         }
+
+        // A new plan must be active (05); the current one is kept even if it was deactivated since.
+        var plan = planChanged ? await customers.FindPlanAsync(planName, cancellationToken) : customer.Plan;
+        if (plan is null || (planChanged && !plan.IsActive))
+            return Invalid(nameof(UpdatePppoeRequest.PlanName), "Choose an active Internet Plan.");
 
         if (usernameChanged && await customers.PppoeUsernameExistsAsync(username, customer.Id, cancellationToken))
             return Duplicate();
@@ -70,7 +75,7 @@ internal sealed class PppoeCommands(
         }
 
         Set("PPPoE Username", customer.PppoeUsername, username, v => customer.PppoeUsername = v);
-        Set("Internet Plan", customer.PlanName, plan, v => customer.PlanName = v);
+        Set("Internet Plan", customer.PlanId, plan.Id, _ => customer.SetPlan(plan));
         Set("Remote Address", customer.PppoeRemoteAddress, Clean(request.RemoteAddress), v => customer.PppoeRemoteAddress = v);
         Set("Local Address", customer.PppoeLocalAddress, Clean(request.LocalAddress), v => customer.PppoeLocalAddress = v);
         Set("Router Comment", customer.PppoeComment, Clean(request.Comment), v => customer.PppoeComment = v);
@@ -115,19 +120,22 @@ internal sealed class PppoeCommands(
         if (!IsOneLine(reason, 500))
             return Invalid(nameof(SubmitPppoeRequest.Reason), "Reason must be at most 500 characters on one line.");
 
-        string? targetPlan = null;
+        Domain.Plans.InternetPlan? targetPlan = null;
         if (operation == ApprovalOperation.ChangePlan)
         {
-            targetPlan = Clean(request.TargetPlan);
-            if (targetPlan is null || !IsOneLine(targetPlan, 100))
+            var targetName = Clean(request.TargetPlan);
+            if (targetName is null || !IsOneLine(targetName, 100))
                 return Invalid(nameof(SubmitPppoeRequest.TargetPlan), "Choose the new Internet Plan.");
+            targetPlan = await customers.FindPlanAsync(targetName, cancellationToken);
+            if (targetPlan is not { IsActive: true })
+                return Invalid(nameof(SubmitPppoeRequest.TargetPlan), "Choose an active Internet Plan.");
         }
 
         var customer = await customers.FindForUpdateAsync(customerId, actor.IsManager, cancellationToken);
         if (customer is null) return new(PppoeOutcome.NotFound);
         if (!customer.CanBeChangedBy(actor.IsManager)) return new(PppoeOutcome.CustomerLocked);
         if (!PppoeStates.Fits(operation, customer.Status)) return new(PppoeOutcome.NotAllowedInCurrentState);
-        if (operation == ApprovalOperation.ChangePlan && string.Equals(targetPlan, customer.PlanName, StringComparison.Ordinal))
+        if (operation == ApprovalOperation.ChangePlan && targetPlan!.Id == customer.PlanId)
             return Invalid(nameof(SubmitPppoeRequest.TargetPlan), "Choose a plan different from the current one.");
         if (await approvals.FindPendingAsync(customer.Id, cancellationToken) is not null)
             return new(PppoeOutcome.RequestAlreadyPending);
@@ -149,7 +157,7 @@ internal sealed class PppoeCommands(
         {
             MarkApproved(approval, actor, now, "Approved by the requesting Manager.");
             expectedStamp = customer.ConcurrencyStamp;
-            Apply(customer, approval, actor, now);
+            Apply(customer, approval, targetPlan, actor, now);
             changed = customer;
             activity[0].Outcome = "Approved";
             activity.Add(Activity(customer.Id, $"Pppoe{label}Approved", "Not sent to router yet", actor, now));
@@ -195,9 +203,14 @@ internal sealed class PppoeCommands(
             if (approval.Operation == ApprovalOperation.CreatePppoe)
                 approval.After = PppoeStates.CreateSummary(customer);
 
+            // The plan chosen at request time is applied, even if it was deactivated while the request waited.
+            var targetPlan = approval.TargetPlanId is { } planId ? await customers.FindPlanByIdAsync(planId, cancellationToken) : null;
+            if (approval.Operation == ApprovalOperation.ChangePlan && targetPlan is null)
+                return new(PppoeOutcome.NotAllowedInCurrentState);
+
             MarkApproved(approval, actor, now, note);
             expectedStamp = customer.ConcurrencyStamp;
-            Apply(customer, approval, actor, now);
+            Apply(customer, approval, targetPlan, actor, now);
             changed = customer;
             activity = Activity(customer.Id, $"Pppoe{label}Approved", Join("Not sent to router yet", note), actor, now);
         }
@@ -254,7 +267,8 @@ internal sealed class PppoeCommands(
     }
 
     /// <summary>Applies an approved change to the database. The router is not touched (module 09).</summary>
-    private static void Apply(Customer customer, ApprovalRequest approval, CustomerActor actor, DateTimeOffset now)
+    private static void Apply(Customer customer, ApprovalRequest approval, Domain.Plans.InternetPlan? targetPlan,
+        CustomerActor actor, DateTimeOffset now)
     {
         switch (approval.Operation)
         {
@@ -266,7 +280,7 @@ internal sealed class PppoeCommands(
                 customer.Status = CustomerStatus.Active;
                 break;
             case ApprovalOperation.ChangePlan:
-                customer.PlanName = approval.TargetPlanName!;
+                customer.SetPlan(targetPlan!);
                 break;
             case ApprovalOperation.TerminatePppoe:
                 customer.Status = CustomerStatus.Terminated;

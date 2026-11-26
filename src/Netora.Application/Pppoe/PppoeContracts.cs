@@ -266,7 +266,7 @@ public static class PppoeStates
     {
         if (!Fits(approval.Operation, customer.Status)) return PppoeOutcome.NotAllowedInCurrentState;
         if (approval.Operation == ApprovalOperation.ChangePlan
-            && string.Equals(approval.TargetPlanName, customer.PlanName, StringComparison.Ordinal))
+            && (approval.TargetPlanId is null || approval.TargetPlanId == customer.PlanId))
             return PppoeOutcome.NotAllowedInCurrentState;
         if (approval.Operation == ApprovalOperation.CreatePppoe && customer.PppoePasswordProtected is null)
             return PppoeOutcome.PasswordRequired;
@@ -274,11 +274,11 @@ public static class PppoeStates
     }
 
     /// <summary>The "after" summary of a create request: what the router account will be.</summary>
-    public static string CreateSummary(Customer c) => $"Enabled, username {c.PppoeUsername}, plan {c.PlanName}";
+    public static string CreateSummary(Customer c) => $"Enabled, username {c.PppoeUsername}, plan {c.Plan.Name}";
 
     /// <summary>New request with its before and after summaries. Status is Pending.</summary>
     public static ApprovalRequest NewRequest(Customer customer, ApprovalOperation operation, string? reason,
-        string? targetPlan, CustomerActor actor, DateTimeOffset now)
+        Domain.Plans.InternetPlan? targetPlan, CustomerActor actor, DateTimeOffset now)
     {
         var state = AccountState(customer.Status);
         var (before, after) = operation switch
@@ -286,7 +286,7 @@ public static class PppoeStates
             ApprovalOperation.CreatePppoe => ("Not created", CreateSummary(customer)),
             ApprovalOperation.DisablePppoe => (state, "Disabled"),
             ApprovalOperation.EnablePppoe => (state, "Enabled"),
-            ApprovalOperation.ChangePlan => ($"Plan {customer.PlanName}", $"Plan {targetPlan}"),
+            ApprovalOperation.ChangePlan => ($"Plan {customer.Plan.Name}", $"Plan {targetPlan?.Name}"),
             ApprovalOperation.TerminatePppoe => (state, "Terminated"),
             _ => (state, state),
         };
@@ -297,7 +297,8 @@ public static class PppoeStates
             Reason = reason,
             Before = before,
             After = after,
-            TargetPlanName = targetPlan,
+            TargetPlanId = targetPlan?.Id,
+            TargetPlanName = targetPlan?.Name,
             RequestedByUserId = actor.UserId,
             RequestedByUserName = actor.UserName,
             RequestedAtUtc = now,

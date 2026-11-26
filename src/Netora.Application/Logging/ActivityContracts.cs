@@ -42,6 +42,8 @@ public static class ActivityCategories
     public const string Users = "Users";
     public const string Settings = "Settings";
     public const string MikroTik = "MikroTik";
+    public const string Plans = "Plans";
+    public const string Nap = "NAP";
     public const string Application = "Application";
 }
 
@@ -59,6 +61,8 @@ public static class ActivityTargets
     public static string Customer(int id) => $"Customer:{id}";
     public static string Request(long id) => $"ApprovalRequest:{id}";
     public static string User(string id) => $"User:{id}";
+    public static string Plan(int id) => $"Plan:{id}";
+    public static string Nap(int id) => $"NapBox:{id}";
 }
 
 /// <summary>Used where no file log is configured (tests, tools).</summary>

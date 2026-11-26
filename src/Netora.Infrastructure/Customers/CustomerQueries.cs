@@ -23,11 +23,11 @@ internal sealed class CustomerQueries(NetoraDbContext db, IOptions<AttachmentOpt
                 g.Count(c => c.Status == CustomerStatus.Active),
                 g.Count(c => c.Status == CustomerStatus.Disabled),
                 g.Count(c => c.Status == CustomerStatus.Terminated),
-                g.Count(c => c.NapBox == Customer.UnknownNap)))
+                g.Count(c => c.Nap.Code == Customer.UnknownNap)))
             .FirstOrDefaultAsync(cancellationToken) ?? new CustomerStatsDto(0, 0, 0, 0, 0);
 
-        var napOptions = await visible.Select(c => c.NapBox).Distinct().OrderBy(n => n).ToListAsync(cancellationToken);
-        var planOptions = await visible.Select(c => c.PlanName).Distinct().OrderBy(p => p).ToListAsync(cancellationToken);
+        var napOptions = await visible.Select(c => c.Nap.Code).Distinct().OrderBy(n => n).ToListAsync(cancellationToken);
+        var planOptions = await visible.Select(c => c.Plan.Name).Distinct().OrderBy(p => p).ToListAsync(cancellationToken);
         var containsSample = await visible.AnyAsync(c => c.IsSampleData, cancellationToken);
 
         var filtered = visible;
@@ -43,9 +43,9 @@ internal sealed class CustomerQueries(NetoraDbContext db, IOptions<AttachmentOpt
         if (Enum.TryParse<CustomerStatus>(query.Status, ignoreCase: true, out var status) && Enum.IsDefined(status))
             filtered = filtered.Where(c => c.Status == status);
         if (!string.IsNullOrWhiteSpace(query.Nap) && !IsAll(query.Nap))
-            filtered = filtered.Where(c => c.NapBox == query.Nap);
+            filtered = filtered.Where(c => c.Nap.Code == query.Nap);
         if (!string.IsNullOrWhiteSpace(query.Plan) && !IsAll(query.Plan))
-            filtered = filtered.Where(c => c.PlanName == query.Plan);
+            filtered = filtered.Where(c => c.Plan.Name == query.Plan);
 
         var pageSize = CustomerListQuery.AllowedPageSizes.Contains(query.PageSize) ? query.PageSize : 10;
         var totalMatching = await filtered.CountAsync(cancellationToken);
@@ -57,7 +57,7 @@ internal sealed class CustomerQueries(NetoraDbContext db, IOptions<AttachmentOpt
             .Take(pageSize)
             .Select(c => new
             {
-                c.Id, c.FirstName, c.LastName, c.PppoeUsername, c.PlanName, c.NapBox, c.OnuSerial, c.Status, c.CreatedAtUtc,
+                c.Id, c.FirstName, c.LastName, c.PppoeUsername, PlanName = c.Plan.Name, NapBox = c.Nap.Code, c.OnuSerial, c.Status, c.CreatedAtUtc,
             })
             .ToListAsync(cancellationToken);
 
@@ -71,12 +71,11 @@ internal sealed class CustomerQueries(NetoraDbContext db, IOptions<AttachmentOpt
 
     public async Task<CustomerFormOptionsDto> GetFormOptionsAsync(bool includeManagerOnly, CancellationToken cancellationToken)
     {
-        var visible = db.Customers.AsNoTracking();
-        if (!includeManagerOnly)
-            visible = visible.Where(c => !c.IsManagerOnly);
-
-        var plans = await visible.Select(c => c.PlanName).Distinct().OrderBy(p => p).ToListAsync(cancellationToken);
-        var naps = await visible.Select(c => c.NapBox).Where(n => n != Customer.UnknownNap).Distinct().OrderBy(n => n)
+        // Active catalogue entries only (05, 06). The catalogues hold no customer data, so Staff and Managers see the
+        // same lists; the edit pages add a customer's current plan or NAP if it has been deactivated since.
+        var plans = await db.InternetPlans.AsNoTracking().Where(p => p.IsActive).OrderBy(p => p.Name).Select(p => p.Name)
+            .ToListAsync(cancellationToken);
+        var naps = await db.NapBoxes.AsNoTracking().Where(n => n.IsActive && !n.IsSystem).OrderBy(n => n.Code).Select(n => n.Code)
             .ToListAsync(cancellationToken);
         naps.Insert(0, Customer.UnknownNap);
         return new CustomerFormOptionsDto(plans, naps);
@@ -85,7 +84,7 @@ internal sealed class CustomerQueries(NetoraDbContext db, IOptions<AttachmentOpt
     public async Task<CustomerDetailDto?> GetDetailAsync(int id, bool viewerIsManager, CancellationToken cancellationToken)
     {
         // Same visibility rule as the list: a hidden customer is indistinguishable from a missing one.
-        var customer = await db.Customers.AsNoTracking()
+        var customer = await db.Customers.AsNoTracking().Include(c => c.Plan).Include(c => c.Nap)
             .FirstOrDefaultAsync(c => c.Id == id && (viewerIsManager || !c.IsManagerOnly), cancellationToken);
         if (customer is null) return null;
 
@@ -105,7 +104,7 @@ internal sealed class CustomerQueries(NetoraDbContext db, IOptions<AttachmentOpt
 
         return new CustomerDetailDto(
             customer.Id, Customer.DisplayId(customer.Id), customer.FirstName, customer.LastName, customer.MobileNumber,
-            customer.Email, customer.Address, customer.Notes, customer.PppoeUsername, customer.PlanName, customer.NapBox,
+            customer.Email, customer.Address, customer.Notes, customer.PppoeUsername, customer.Plan.Name, customer.Nap.Code,
             customer.OnuSerial, customer.OnuModel, customer.Status.ToString(), customer.IsManagerOnly,
             customer.CreatedAtUtc, customer.UpdatedAtUtc, customer.ConcurrencyStamp,
             customer.CanBeChangedBy(viewerIsManager), customer.ServiceFieldsLocked, activity, attachments,
@@ -129,8 +128,8 @@ internal sealed class CustomerQueries(NetoraDbContext db, IOptions<AttachmentOpt
                 ? source.OrderByDescending(c => c.LastName).ThenByDescending(c => c.FirstName).ThenBy(c => c.Id)
                 : source.OrderBy(c => c.LastName).ThenBy(c => c.FirstName).ThenBy(c => c.Id),
             "username" => desc ? source.OrderByDescending(c => c.PppoeUsername).ThenBy(c => c.Id) : source.OrderBy(c => c.PppoeUsername).ThenBy(c => c.Id),
-            "plan" => desc ? source.OrderByDescending(c => c.PlanName).ThenBy(c => c.Id) : source.OrderBy(c => c.PlanName).ThenBy(c => c.Id),
-            "nap" => desc ? source.OrderByDescending(c => c.NapBox).ThenBy(c => c.Id) : source.OrderBy(c => c.NapBox).ThenBy(c => c.Id),
+            "plan" => desc ? source.OrderByDescending(c => c.Plan.Name).ThenBy(c => c.Id) : source.OrderBy(c => c.Plan.Name).ThenBy(c => c.Id),
+            "nap" => desc ? source.OrderByDescending(c => c.Nap.Code).ThenBy(c => c.Id) : source.OrderBy(c => c.Nap.Code).ThenBy(c => c.Id),
             "onu" => desc ? source.OrderByDescending(c => c.OnuSerial).ThenBy(c => c.Id) : source.OrderBy(c => c.OnuSerial).ThenBy(c => c.Id),
             "status" => desc ? source.OrderByDescending(c => c.Status).ThenBy(c => c.Id) : source.OrderBy(c => c.Status).ThenBy(c => c.Id),
             "created" => desc ? source.OrderByDescending(c => c.CreatedAtUtc).ThenBy(c => c.Id) : source.OrderBy(c => c.CreatedAtUtc).ThenBy(c => c.Id),

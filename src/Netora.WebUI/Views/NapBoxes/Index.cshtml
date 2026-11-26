@@ -1,0 +1,78 @@
+@model Netora.Application.Catalog.NapListDto?
+@{
+    ViewData["Title"] = "NAP Boxes";
+    ViewData["Nav"] = "nap";
+    var isManager = ViewData["IsManager"] as bool? == true;
+}
+<div class="heading">
+    <div class="heading-title">
+        <svg class="icon"><use href="#users" /></svg>
+        <div>
+            <h1>NAP Boxes</h1>
+            <p>Manage network access points and subscriber assignments.</p>
+        </div>
+    </div>
+    <div class="heading-actions"><a class="btn btn-outline" href="/customers">Customers</a></div>
+</div>
+@if (TempData[Netora.WebUI.Controllers.CustomersController.ToastKey] is string toast)
+{
+    <div class="form-success" role="status">@toast</div>
+}
+@if (TempData[Netora.WebUI.Controllers.CustomersController.ErrorKey] is string error)
+{
+    <div class="form-alert" role="alert">@error</div>
+}
+@if (Model is null)
+{
+    <section class="panel" role="alert"><p class="mb-0" style="color:var(--muted)">@ViewData["Error"]</p></section>
+    return;
+}
+
+<section class="panel module-panel">
+    <div class="module-head">
+        <h2>NAP Inventory</h2>
+        @if (isManager)
+        {
+            <a class="btn btn-primary" href="/nap-boxes/new">Add NAP Box</a>
+        }
+        else
+        {
+            <button type="button" class="btn btn-primary" disabled title="Only Managers can add NAP boxes.">Add NAP Box</button>
+        }
+    </div>
+    <div class="table-scroll">
+        <table class="customers-table all-table">
+            <thead><tr><th>NAP Code</th><th>Area</th><th>Description</th><th>Customers</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody>
+                @foreach (var n in Model.Items)
+                {
+                    <tr>
+                        <td>@n.Code</td>
+                        @if (n.IsSystem)
+                        {
+                            <td>@(n.Area ?? "Unassigned")</td>
+                            <td>@(n.Description ?? "Imported accounts")</td>
+                            <td>@n.Customers</td>
+                            <td>@if (n.Customers > 0) { <span class="pill pending">Review</span> } else { <span class="pill unknown">Empty</span> }</td>
+                            <td><a class="btn btn-primary" href="/nap-boxes/@n.Id">Review</a></td>
+                        }
+                        else
+                        {
+                            <td>@(n.Area ?? "—")</td>
+                            <td>@(n.Description ?? "—")</td>
+                            <td>@n.Customers</td>
+                            <td>@if (n.IsActive) { <span class="pill active">Active</span> } else { <span class="pill disabled">Inactive</span> }</td>
+                            <td><a class="btn btn-primary" href="/nap-boxes/@n.Id">@(isManager ? "Manage" : "View")</a></td>
+                        }
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="panel module-panel">
+    <div class="module-head"><h2>NAP Assignment</h2></div>
+    <p>Assign customers to NAP boxes. Port-level management is outside the scope of V1.</p>
+    <p class="module-note">Open a NAP box to see its customers and move them to another NAP box; UNKNOWN holds imported accounts and customers without a NAP. Moving needs no approval and does not change the router. Inactive NAP boxes take no new customers; customers already on them stay. Counts include every status@(isManager ? "" : " and leave out Manager-only customers").</p>
+</section>

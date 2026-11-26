@@ -74,12 +74,14 @@ internal sealed class ApprovalQueries(NetoraDbContext db, Netora.Application.Rou
         var row = await (
                 from req in db.ApprovalRequests.AsNoTracking()
                 join cust in db.Customers.AsNoTracking() on req.CustomerId equals cust.Id
+                join plan in db.InternetPlans.AsNoTracking() on cust.PlanId equals plan.Id
                 where req.Id == requestId && (viewerIsManager || !cust.IsManagerOnly)
-                select new { r = req, c = cust })
+                select new { r = req, c = cust, plan })
             .FirstOrDefaultAsync(cancellationToken);
         if (row is null) return null;
 
         var (r, c) = (row.r, row.c);
+        c.Plan = row.plan;
         var pending = r.Status == ApprovalStatus.Pending;
         string? blocked = null;
         if (pending)
@@ -99,7 +101,7 @@ internal sealed class ApprovalQueries(NetoraDbContext db, Netora.Application.Rou
             r.TargetPlanName, r.RequestedByUserName, r.RequestedAtUtc, r.DecidedByUserName, r.DecidedAtUtc, r.DecisionNote,
             r.ProvisioningStatus.ToString(), r.ProvisioningAttempts, r.ProvisioningLastAttemptAtUtc, r.ProvisioningError,
             c.Id, Customer.DisplayId(c.Id), Name(c.FirstName, c.LastName), c.Status.ToString(), PppoeStates.AccountState(c.Status),
-            c.PppoeUsername, c.PlanName, c.PppoePasswordProtected != null, c.IsManagerOnly,
+            c.PppoeUsername, c.Plan.Name, c.PppoePasswordProtected != null, c.IsManagerOnly,
             CanDecide: viewerIsManager && pending,
             ApproveBlockedReason: blocked,
             RouterMode: router?.Mode ?? "Mock",

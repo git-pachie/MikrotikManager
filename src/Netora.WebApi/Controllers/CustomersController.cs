@@ -142,6 +142,37 @@ public sealed class CustomersController(ICustomerQueries customers, ICustomerCom
         }
     }
 
+    /// <summary>
+    /// Moves a customer to another NAP box (06.02): Staff and Managers, no approval and no router call. The target must
+    /// be active (or UNKNOWN). Same visibility and termination rules as editing; a stale stamp returns 409.
+    /// </summary>
+    [HttpPut("{id:int}/nap")]
+    [ProducesResponseType(typeof(ApiResponse<UpdatedCustomerDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<UpdatedCustomerDto>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse<UpdatedCustomerDto>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<UpdatedCustomerDto>), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> MoveNap(int id, [FromBody] MoveNapRequest request, CancellationToken cancellationToken)
+    {
+        var actor = CurrentActor();
+        if (actor is null)
+            return Unauthorized(ApiResponse<UpdatedCustomerDto>.Fail("unauthorized", "Authentication is required.", HttpContext.TraceIdentifier));
+
+        var result = await commands.MoveNapAsync(id, request, actor, cancellationToken);
+        var traceId = HttpContext.TraceIdentifier;
+        return result.Outcome switch
+        {
+            UpdateCustomerOutcome.Updated or UpdateCustomerOutcome.NoChanges => Ok(ApiResponse<UpdatedCustomerDto>.Ok(
+                new UpdatedCustomerDto(id, string.Empty, result.Outcome == UpdateCustomerOutcome.Updated), traceId)),
+            UpdateCustomerOutcome.ValidationFailed => BadRequest(ApiResponse<UpdatedCustomerDto>.Fail(
+                "validation_failed", "One or more validation errors occurred.", traceId, result.Errors)),
+            UpdateCustomerOutcome.NotFound => NotFound(ApiResponse<UpdatedCustomerDto>.Fail("not_found", "Customer not found.", traceId)),
+            UpdateCustomerOutcome.Locked => Conflict(ApiResponse<UpdatedCustomerDto>.Fail("customer_locked", "Terminated customers are read-only.", traceId)),
+            UpdateCustomerOutcome.Conflict => Conflict(ApiResponse<UpdatedCustomerDto>.Fail(
+                "concurrency_conflict", "This customer was changed by someone else. Reload and try again.", traceId)),
+            _ => throw new InvalidOperationException($"Unhandled outcome {result.Outcome}"),
+        };
+    }
+
     private CustomerActor? CurrentActor()
     {
         var userId = User.FindFirst(NetoraClaimTypes.Subject)?.Value;

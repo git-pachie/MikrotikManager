@@ -17,6 +17,8 @@ public sealed class NetoraDbContext(DbContextOptions<NetoraDbContext> options)
     public DbSet<CustomerAttachment> CustomerAttachments => Set<CustomerAttachment>();
     public DbSet<ApprovalRequest> ApprovalRequests => Set<ApprovalRequest>();
     public DbSet<AppSetting> AppSettings => Set<AppSetting>();
+    public DbSet<Domain.Plans.InternetPlan> InternetPlans => Set<Domain.Plans.InternetPlan>();
+    public DbSet<Domain.Network.NapBox> NapBoxes => Set<Domain.Network.NapBox>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

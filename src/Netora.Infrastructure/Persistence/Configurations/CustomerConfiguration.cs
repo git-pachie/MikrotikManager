@@ -15,8 +15,8 @@ internal sealed class CustomerConfiguration : IEntityTypeConfiguration<Customer>
         builder.Property(c => c.MobileNumber).HasMaxLength(30);
         builder.Property(c => c.Address).HasMaxLength(300);
         builder.Property(c => c.PppoeUsername).HasMaxLength(40).IsRequired();
-        builder.Property(c => c.PlanName).HasMaxLength(100).IsRequired();
-        builder.Property(c => c.NapBox).HasMaxLength(50).IsRequired();
+        builder.HasOne(c => c.Plan).WithMany().HasForeignKey(c => c.PlanId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(c => c.Nap).WithMany().HasForeignKey(c => c.NapBoxId).OnDelete(DeleteBehavior.Restrict);
         builder.Property(c => c.OnuSerial).HasMaxLength(50);
         builder.Property(c => c.OnuModel).HasMaxLength(100);
         builder.Property(c => c.RouterSecretId).HasMaxLength(20);

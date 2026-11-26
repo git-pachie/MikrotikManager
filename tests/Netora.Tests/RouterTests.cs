@@ -62,6 +62,14 @@ public sealed class FakeRouter : IRouterClient
     public Task<RouterActiveSession?> FindActiveSessionAsync(string name, CancellationToken ct)
         => Task.FromResult(Online.Contains(name) ? new RouterActiveSession(name, "10.0.0.9", "1h", null) : null);
 
+    public List<string> Profiles { get; } = ["default"];
+
+    public Task<IReadOnlyList<string>> ListProfilesAsync(CancellationToken ct)
+    {
+        Check();
+        return Task.FromResult<IReadOnlyList<string>>(Profiles.ToList());
+    }
+
     public RouterSecret Add(string name, string profile, bool disabled = false, string? comment = null, string? password = "pw")
     {
         var s = new RouterSecret($"*{next++:X}", name, password, profile, disabled, comment, null, null, "pppoe");
@@ -195,7 +203,7 @@ public class RouterTests
         var t = new TestDb(); var ids = t.Seed();
         var router = new FakeRouter();
         router.Add("maria_santos", "Fiber 100 Mbps");
-        var id = await ApprovedAsync(t, ids.Normal, ApprovalOperation.ChangePlan, c => c.PlanName = "Fiber 300 Mbps");
+        var id = await ApprovedAsync(t, ids.Normal, ApprovalOperation.ChangePlan, c => c.PlanId = t.PlanIds["Fiber 300 Mbps"]);
 
         Assert.Equal("Succeeded", (await ProvisionAsync(t, router, id)).Status);
         Assert.Equal("Fiber 300 Mbps", router.Secrets.Single().Profile);
@@ -342,7 +350,8 @@ public class RouterTests
         await using (var db = t.NewContext())
         {
             var c = await db.Customers.SingleAsync(x => x.PppoeUsername == "rosa_new");
-            Assert.Equal(Customer.UnknownNap, c.NapBox);
+            Assert.Equal(t.NapIds[Customer.UnknownNap], c.NapBoxId);
+            Assert.Equal(t.PlanIds["Fiber 50 Mbps"], c.PlanId);   // the plan whose profile the secret uses
             Assert.Equal(CustomerStatus.Disabled, c.Status);
             Assert.Equal(("Rosa", "Dela Cruz"), (c.FirstName, c.LastName));
             Assert.Equal(router.Secrets.Single(s => s.Name == "rosa_new").Id, c.RouterSecretId);

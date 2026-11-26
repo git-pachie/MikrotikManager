@@ -1,0 +1,123 @@
+@model PlanListViewModel
+@{
+    ViewData["Title"] = "Internet Plans";
+    ViewData["Nav"] = "plans";
+}
+<div class="heading">
+    <div class="heading-title">
+        <svg class="icon"><use href="#users" /></svg>
+        <div>
+            <h1>Internet Plans</h1>
+            <p>Manage pricing, advertised speeds, and MikroTik PPP profiles.</p>
+        </div>
+    </div>
+    <div class="heading-actions"><a class="btn btn-outline" href="/customers">Customers</a></div>
+</div>
+@if (TempData[Netora.WebUI.Controllers.CustomersController.ToastKey] is string toast)
+{
+    <div class="form-success" role="status">@toast</div>
+}
+@if (TempData[Netora.WebUI.Controllers.CustomersController.ErrorKey] is string error)
+{
+    <div class="form-alert" role="alert">@error</div>
+}
+@if (Model.Data is null)
+{
+    <section class="panel" role="alert"><p class="mb-0" style="color:var(--muted)">@Model.ErrorMessage</p></section>
+    return;
+}
+
+<section class="panel module-panel">
+    <div class="module-head">
+        <h2>Plan Catalogue</h2>
+        @if (Model.IsManager)
+        {
+            <a class="btn btn-primary" href="/plans/new">Add Internet Plan</a>
+        }
+        else
+        {
+            <button type="button" class="btn btn-primary" disabled title="Only Managers can add plans.">Add Internet Plan</button>
+        }
+    </div>
+    @if (Model.Data.Items.Count == 0)
+    {
+        <p>No plans yet.@(Model.IsManager ? " Add the first plan to start assigning customers." : "")</p>
+    }
+    else
+    {
+        <div class="table-scroll">
+            <table class="customers-table all-table">
+                <thead><tr><th>Plan</th><th>Monthly Fee</th><th>Download / Upload</th><th>MikroTik Profile</th><th>Subscribers</th><th>Actions</th></tr></thead>
+                <tbody>
+                    @foreach (var p in Model.Data.Items)
+                    {
+                        <tr>
+                            <td>@p.Name @if (!p.IsActive) { <span class="pill disabled">Inactive</span> }</td>
+                            <td>@CatalogLabels.Fee(p.MonthlyFee)</td>
+                            <td>@CatalogLabels.Speed(p.DownloadMbps, p.UploadMbps)</td>
+                            <td>@p.RouterProfile</td>
+                            <td>@p.Subscribers</td>
+                            <td>
+                                @if (Model.IsManager)
+                                {
+                                    <a class="btn btn-primary" href="/plans/@p.Id/edit">Edit</a>
+                                }
+                                else
+                                {
+                                    <button type="button" class="btn btn-primary" disabled title="Only Managers can edit plans.">Edit</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+<section class="panel module-panel">
+    <div class="module-head">
+        <h2>Plan Configuration</h2>
+        @if (Model.IsManager)
+        {
+            <a class="btn btn-outline" href="/plans/router-check" title="Reads the PPP profiles on the router. Changes nothing.">Check Router Profiles</a>
+        }
+    </div>
+    <p>Each plan maps to a RouterOS PPP profile. Plan changes for existing customers require Manager approval before provisioning.</p>
+    <p class="module-note">Netora never creates or changes PPP profiles on the router: create the profile in RouterOS first, then enter its exact name here. Editing a plan does not resend existing customers; any difference shows as a Configuration Mismatch on the customer profile. Inactive plans cannot be chosen for new customers or plan changes. Subscriber counts include every status@(Model.IsManager ? "" : " and leave out Manager-only customers").</p>
+    @if (Model.CheckError is not null)
+    {
+        <div class="form-alert" role="alert">@Model.CheckError</div>
+    }
+    @if (Model.Check is { } check)
+    {
+        <h3 class="detail-subtitle">Router Profiles @(check.Mode == "Mock" ? "(Mock router)" : "")</h3>
+        @if (!check.Reachable)
+        {
+            <div class="form-alert" role="alert">The router could not be read: @check.Error</div>
+        }
+        else
+        {
+            <div class="table-scroll">
+                <table class="customers-table all-table">
+                    <thead><tr><th>Plan</th><th>MikroTik Profile</th><th>On Router</th></tr></thead>
+                    <tbody>
+                        @foreach (var p in check.Plans)
+                        {
+                            <tr>
+                                <td>@p.Name @if (!p.IsActive) { <span class="pill disabled">Inactive</span> }</td>
+                                <td>@p.RouterProfile</td>
+                                <td>@if (p.Found) { <span class="pill active">Found</span> } else { <span class="pill terminated">Missing</span> }</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <p class="module-note">
+                Checked @check.CheckedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm").
+                @if (check.Plans.Any(p => !p.Found)) { <text>Customers on a plan with a missing profile cannot be provisioned until the profile exists on the router.</text> }
+                @if (check.UnusedRouterProfiles.Count > 0) { <text>Profiles on the router without a plan: @string.Join(", ", check.UnusedRouterProfiles).</text> }
+            </p>
+        }
+    }
+</section>

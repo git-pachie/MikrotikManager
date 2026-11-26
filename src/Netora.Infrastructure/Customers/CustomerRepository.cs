@@ -17,7 +17,17 @@ internal sealed class CustomerRepository(NetoraDbContext db) : ICustomerReposito
             cancellationToken);
 
     public Task<Customer?> FindForUpdateAsync(int id, bool includeManagerOnly, CancellationToken cancellationToken)
-        => db.Customers.FirstOrDefaultAsync(c => c.Id == id && (includeManagerOnly || !c.IsManagerOnly), cancellationToken);
+        => db.Customers.Include(c => c.Plan).Include(c => c.Nap)
+            .FirstOrDefaultAsync(c => c.Id == id && (includeManagerOnly || !c.IsManagerOnly), cancellationToken);
+
+    public Task<Domain.Plans.InternetPlan?> FindPlanAsync(string name, CancellationToken cancellationToken)
+        => db.InternetPlans.FirstOrDefaultAsync(p => p.Name == name, cancellationToken);
+
+    public Task<Domain.Plans.InternetPlan?> FindPlanByIdAsync(int id, CancellationToken cancellationToken)
+        => db.InternetPlans.FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
+
+    public Task<Domain.Network.NapBox?> FindNapAsync(string code, CancellationToken cancellationToken)
+        => db.NapBoxes.FirstOrDefaultAsync(n => n.Code == code, cancellationToken);
 
     public async Task<CustomerSaveResult> AddAsync(Customer customer, CustomerActivity activity,
         Domain.Approvals.ApprovalRequest creationRequest, CancellationToken cancellationToken)

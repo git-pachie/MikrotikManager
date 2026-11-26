@@ -58,7 +58,28 @@ public sealed class TestDb : IDisposable
             .ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning))
             .AddInterceptors(interceptors)
             .Options;
+
+        // The catalogue every test can rely on (modules 05 and 06): profile = plan name, as the migration sets it.
+        using var db = NewContext();
+        var now = DateTimeOffset.UtcNow;
+        foreach (var name in CatalogPlans)
+            db.InternetPlans.Add(new Netora.Domain.Plans.InternetPlan { Name = name, RouterProfile = name, CreatedAtUtc = now });
+        db.NapBoxes.Add(new Netora.Domain.Network.NapBox { Code = Customer.UnknownNap, IsSystem = true, CreatedAtUtc = now });
+        foreach (var code in CatalogNaps)
+            db.NapBoxes.Add(new Netora.Domain.Network.NapBox { Code = code, CreatedAtUtc = now });
+        db.SaveChanges();
+        PlanIds = db.InternetPlans.ToDictionary(p => p.Name, p => p.Id);
+        NapIds = db.NapBoxes.ToDictionary(n => n.Code, n => n.Id);
     }
+
+    public static readonly string[] CatalogPlans = ["Fiber 30 Mbps", "Fiber 50 Mbps", "Fiber 100 Mbps", "Fiber 300 Mbps"];
+    public static readonly string[] CatalogNaps = ["NAP-01", "NAP-02", "NAP-03"];
+
+    /// <summary>Plan IDs by name.</summary>
+    public IReadOnlyDictionary<string, int> PlanIds { get; }
+
+    /// <summary>NAP box IDs by code, including UNKNOWN.</summary>
+    public IReadOnlyDictionary<string, int> NapIds { get; }
 
     public NetoraDbContext NewContext() => new(options);
 
@@ -102,14 +123,15 @@ public sealed class TestDb : IDisposable
         return (normal.Id, restricted.Id, pending.Id, terminated.Id);
     }
 
-    public static Customer Make(string first, string last, string username, string plan, string nap,
+    /// <summary>A customer on a catalogue plan and NAP box (linked by ID).</summary>
+    public Customer Make(string first, string last, string username, string plan, string nap,
         CustomerStatus status, bool managerOnly, int createdDayOffset) => new()
     {
         FirstName = first,
         LastName = last,
         PppoeUsername = username,
-        PlanName = plan,
-        NapBox = nap,
+        PlanId = PlanIds[plan],
+        NapBoxId = NapIds[nap],
         Address = "Test address",
         Status = status,
         IsManagerOnly = managerOnly,

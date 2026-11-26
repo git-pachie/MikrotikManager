@@ -14,7 +14,7 @@ internal sealed class RouterStatusService(NetoraDbContext db, IRouterClient rout
 {
     public async Task<RouterStatusDto?> CheckAsync(int customerId, bool viewerIsManager, CancellationToken cancellationToken)
     {
-        var c = await db.Customers.AsNoTracking()
+        var c = await db.Customers.AsNoTracking().Include(x => x.Plan)
             .FirstOrDefaultAsync(x => x.Id == customerId && (viewerIsManager || !x.IsManagerOnly), cancellationToken);
         if (c is null) return null;
 
@@ -26,14 +26,14 @@ internal sealed class RouterStatusService(NetoraDbContext db, IRouterClient rout
             var session = secret is null || secret.Disabled ? null : await router.FindActiveSessionAsync(secret.Name, cancellationToken);
             return new RouterStatusDto(router.Mode, true, null, now, secret is not null, expected,
                 secret is null ? null : secret.Disabled ? "Disabled" : "Enabled",
-                session is not null, session?.Address, session?.Uptime, secret?.Profile, c.PlanName, Compare(c, secret));
+                session is not null, session?.Address, session?.Uptime, secret?.Profile, c.Plan.RouterProfile, Compare(c, secret));
         }
         catch (RouterException ex)
         {
             (activity ?? NullActivityLog.Instance).Write(new ActivityEvent(ActivityCategories.MikroTik, "RouterError",
                 ActivityOutcomes.Failure, ActivityTargets.Customer(c.Id), $"step=StatusCheck kind={ex.Kind} mode={router.Mode}",
                 ActivityLevel.Warning));
-            return new RouterStatusDto(router.Mode, false, ex.Message, now, false, expected, null, false, null, null, null, c.PlanName, []);
+            return new RouterStatusDto(router.Mode, false, ex.Message, now, false, expected, null, false, null, null, null, c.Plan.RouterProfile, []);
         }
     }
 
@@ -60,7 +60,8 @@ internal sealed class RouterStatusService(NetoraDbContext db, IRouterClient rout
         }
 
         Check("PPPoE Username", c.PppoeUsername, secret.Name);
-        Check("Profile (Internet Plan)", c.PlanName, secret.Profile);
+        // Expected is the plan's mapped PPP profile (module 05), not the plan name.
+        Check("Profile (Internet Plan)", c.Plan.RouterProfile, secret.Profile);
         var shouldBeDisabled = c.Status is CustomerStatus.Disabled or CustomerStatus.Terminated;
         if (shouldBeDisabled != secret.Disabled)
             list.Add(new("Secret state", shouldBeDisabled ? "Disabled" : "Enabled", secret.Disabled ? "Disabled" : "Enabled"));

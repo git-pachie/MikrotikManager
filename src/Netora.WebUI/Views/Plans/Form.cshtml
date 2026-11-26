@@ -1,0 +1,49 @@
+@model PlanFormViewModel
+@{
+    ViewData["Title"] = Model.IsEdit ? "Edit Internet Plan" : "Add Internet Plan";
+    ViewData["Nav"] = "plans";
+    var formError = ViewData.ModelState[string.Empty]?.Errors.FirstOrDefault()?.ErrorMessage;
+    var action = Model.IsEdit ? $"/plans/{Model.Id}/edit" : "/plans/new";
+}
+<div class="detail-breadcrumb"><a href="/plans">Internet Plans</a><span> / </span><strong>@(Model.IsEdit ? Model.Name : "Add Internet Plan")</strong></div>
+<div class="heading">
+    <div class="heading-title">
+        <svg class="icon"><use href="#users" /></svg>
+        <div>
+            <h1>@(Model.IsEdit ? "Edit Internet Plan" : "Add Internet Plan")</h1>
+            <p>@(Model.IsEdit ? $"{Model.Subscribers} subscriber(s) on this plan" : "Add a plan and the MikroTik PPP profile it uses.")</p>
+        </div>
+    </div>
+    <div class="heading-actions"><a class="btn btn-outline" href="/plans">Back to plans</a></div>
+</div>
+@if (formError is not null)
+{
+    <div class="form-alert" role="alert">@formError</div>
+}
+
+<form method="post" action="@action" novalidate>
+    @Html.AntiForgeryToken()
+    <input asp-for="ConcurrencyStamp" type="hidden">
+    <section class="panel module-panel">
+        <div class="module-head"><h2>Plan Details</h2></div>
+        <div class="module-fields">
+            <label>Plan name *<input asp-for="Name" required maxlength="100" placeholder="Plan 799"><span asp-validation-for="Name" class="field-error"></span></label>
+            <label>Monthly fee (₱)<input asp-for="MonthlyFee" type="number" min="0" max="1000000" step="0.01" inputmode="decimal" placeholder="799"><span asp-validation-for="MonthlyFee" class="field-error"></span></label>
+            <label>Download (Mbps)<input asp-for="DownloadMbps" type="number" min="1" max="100000" step="1" placeholder="60"><span asp-validation-for="DownloadMbps" class="field-error"></span></label>
+            <label>Upload (Mbps)<input asp-for="UploadMbps" type="number" min="1" max="100000" step="1" placeholder="60"><span asp-validation-for="UploadMbps" class="field-error"></span></label>
+            <label class="span-2">MikroTik PPP profile *<input asp-for="RouterProfile" required maxlength="100" autocomplete="off" placeholder="NETORA_60M"><span asp-validation-for="RouterProfile" class="field-error"></span></label>
+        </div>
+        <div class="module-actions">
+            <label class="module-check"><input asp-for="IsActive" type="checkbox"> Active (can be chosen for new customers and plan changes)</label>
+        </div>
+        <div class="module-actions">
+            <button class="btn btn-primary" type="submit">@(Model.IsEdit ? "Save Plan" : "Add Plan")</button>
+            <a class="btn btn-outline" href="/plans">Cancel</a>
+        </div>
+        <p class="module-note">The profile must already exist on the router with this exact name; Netora does not create it. Use Check Router Profiles on the plans page to confirm.</p>
+        @if (Model.IsEdit && Model.Subscribers > 0)
+        {
+            <p class="module-note" role="status">@Model.Subscribers customer(s) use this plan. Changing the profile (now <strong>@Model.SavedRouterProfile</strong>) does not resend them to the router: they show a Configuration Mismatch until a Manager-approved change is sent. Deactivating keeps them on the plan.</p>
+        }
+    </section>
+</form>

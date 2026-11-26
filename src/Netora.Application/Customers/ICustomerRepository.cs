@@ -24,6 +24,14 @@ public interface ICustomerRepository
     /// </summary>
     Task<Customer?> FindForUpdateAsync(int id, bool includeManagerOnly, CancellationToken cancellationToken);
 
+    /// <summary>A plan by its exact name (active or not); null when there is none.</summary>
+    Task<Domain.Plans.InternetPlan?> FindPlanAsync(string name, CancellationToken cancellationToken);
+
+    Task<Domain.Plans.InternetPlan?> FindPlanByIdAsync(int id, CancellationToken cancellationToken);
+
+    /// <summary>A NAP box by its exact code (active or not); null when there is none.</summary>
+    Task<Domain.Network.NapBox?> FindNapAsync(string code, CancellationToken cancellationToken);
+
     /// <summary>
     /// Saves a new customer, its first activity line and its PPPoE creation request together, or none of them.
     /// </summary>

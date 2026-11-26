@@ -1,0 +1,118 @@
+@model NapDetailViewModel
+@{
+    var d = Model.Data;
+    ViewData["Title"] = $"{d.Code} | NAP Box Details";
+    ViewData["Nav"] = "nap";
+    var formError = ViewData.ModelState[string.Empty]?.Errors.FirstOrDefault()?.ErrorMessage;
+    var editable = Model.IsManager && !d.IsSystem;
+}
+<div class="detail-breadcrumb"><a href="/nap-boxes">NAP Boxes</a><span> / </span><strong>@d.Code</strong></div>
+<div class="heading">
+    <div class="heading-title">
+        <svg class="icon"><use href="#users" /></svg>
+        <div>
+            <h1>NAP Box Details</h1>
+            <p>@(d.IsSystem ? "Review customers without a NAP box and assign them." : "Review customers assigned to a selected NAP box.")</p>
+        </div>
+    </div>
+    <div class="heading-actions"><a class="btn btn-outline" href="/customers">Customers</a></div>
+</div>
+@if (TempData[Netora.WebUI.Controllers.CustomersController.ToastKey] is string toast)
+{
+    <div class="form-success" role="status">@toast</div>
+}
+@if (TempData[Netora.WebUI.Controllers.CustomersController.ErrorKey] is string error)
+{
+    <div class="form-alert" role="alert">@error</div>
+}
+@if (formError is not null)
+{
+    <div class="form-alert" role="alert">@formError</div>
+}
+
+<section class="panel module-panel">
+    <div class="module-head">
+        <h2>@d.Code@(string.IsNullOrEmpty(d.Area) ? "" : $" — {d.Area}")</h2>
+        @if (d.IsSystem) { <span class="pill pending">Built in</span> }
+        else if (!d.IsActive) { <span class="pill disabled">Inactive</span> }
+    </div>
+    @if (editable)
+    {
+        <form method="post" action="/nap-boxes/@d.Id" novalidate>
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="ConcurrencyStamp" value="@Model.Form.ConcurrencyStamp">
+            <partial name="_NapFields" model="Model.Form" />
+            <div class="module-actions">
+                <button class="btn btn-primary" type="submit">Save Changes</button>
+            </div>
+        </form>
+    }
+    else
+    {
+        <div class="module-fields">
+            <label>NAP Code<input value="@d.Code" readonly></label>
+            <label>Area<input value="@(d.Area ?? (d.IsSystem ? "Unassigned" : ""))" readonly></label>
+            <label>Description<input value="@(d.Description ?? (d.IsSystem ? "Imported accounts" : ""))" readonly></label>
+            <label>Status<input value="@(d.IsActive ? "Active" : "Inactive")" readonly></label>
+        </div>
+        <p class="module-note">@(d.IsSystem
+            ? "UNKNOWN is built in: imported accounts and customers without a NAP box are listed here. It cannot be edited or deactivated."
+            : "Only Managers can edit NAP boxes.")</p>
+    }
+</section>
+
+<section class="panel module-panel">
+    <div class="module-head">
+        <h2>Assigned Customers</h2>
+        <span class="module-note">@d.AssignedCustomers.Count customer(s)</span>
+    </div>
+    @if (d.AssignedCustomers.Count == 0)
+    {
+        <p>@(d.IsSystem ? "Every customer has a NAP box." : "No customers are assigned to this NAP box yet.")</p>
+    }
+    else
+    {
+        <div class="table-scroll">
+            <table class="customers-table all-table">
+                <thead><tr><th>Customer</th><th>PPPoE Username</th><th>Internet Plan</th><th>Status</th><th>Move to NAP</th></tr></thead>
+                <tbody>
+                    @foreach (var c in d.AssignedCustomers)
+                    {
+                        <tr>
+                            <td><a class="customer-link" href="/customers/@c.CustomerId">@c.Name</a></td>
+                            <td>@c.PppoeUsername</td>
+                            <td>@c.PlanName</td>
+                            <td><span class="pill @(c.Status == "PendingApproval" ? "pending" : c.Status.ToLowerInvariant())">@CustomerListViewModel.StatusLabel(c.Status)</span></td>
+                            <td>
+                                @if (!c.CanMove)
+                                {
+                                    <span class="module-note" title="Terminated customers are view-only for Staff.">View only</span>
+                                }
+                                else if (d.MoveTargets.Count == 0)
+                                {
+                                    <span class="module-note">No other active NAP box</span>
+                                }
+                                else
+                                {
+                                    <form method="post" action="/nap-boxes/@d.Id/customers/@c.CustomerId/move" class="nap-move">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="concurrencyStamp" value="@c.ConcurrencyStamp">
+                                        <select name="napBox" required aria-label="New NAP box for @c.Name">
+                                            @foreach (var code in d.MoveTargets) { <option value="@code">@code</option> }
+                                        </select>
+                                        <button type="submit" class="btn btn-outline">Move</button>
+                                    </form>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        @if (d.AssignedCustomers.Count >= 500)
+        {
+            <p class="module-note">Showing the first 500 customers. Use the Customers list with the NAP filter to see the rest.</p>
+        }
+    }
+    <p class="module-note">Moving a customer needs no approval and does not change the router; it is recorded in the customer's activity.</p>
+</section>

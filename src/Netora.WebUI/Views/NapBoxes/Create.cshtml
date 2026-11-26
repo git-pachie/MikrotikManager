@@ -1,0 +1,32 @@
+@model NapFormViewModel
+@{
+    ViewData["Title"] = "Add NAP Box";
+    ViewData["Nav"] = "nap";
+    var formError = ViewData.ModelState[string.Empty]?.Errors.FirstOrDefault()?.ErrorMessage;
+}
+<div class="detail-breadcrumb"><a href="/nap-boxes">NAP Boxes</a><span> / </span><strong>Add NAP Box</strong></div>
+<div class="heading">
+    <div class="heading-title">
+        <svg class="icon"><use href="#users" /></svg>
+        <div>
+            <h1>Add NAP Box</h1>
+            <p>Add a network access point that customers can be assigned to.</p>
+        </div>
+    </div>
+    <div class="heading-actions"><a class="btn btn-outline" href="/nap-boxes">Back to NAP boxes</a></div>
+</div>
+@if (formError is not null)
+{
+    <div class="form-alert" role="alert">@formError</div>
+}
+<form method="post" action="/nap-boxes/new" novalidate>
+    @Html.AntiForgeryToken()
+    <section class="panel module-panel">
+        <div class="module-head"><h2>NAP Box</h2></div>
+        <partial name="_NapFields" model="Model" />
+        <div class="module-actions">
+            <button class="btn btn-primary" type="submit">Add NAP Box</button>
+            <a class="btn btn-outline" href="/nap-boxes">Cancel</a>
+        </div>
+    </section>
+</form>

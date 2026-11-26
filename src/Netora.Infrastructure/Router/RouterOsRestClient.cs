@@ -73,6 +73,14 @@ internal sealed partial class RouterOsRestClient(
             : null;
     }
 
+    public async Task<IReadOnlyList<string>> ListProfilesAsync(CancellationToken cancellationToken)
+    {
+        var list = await SendAsync(HttpMethod.Get, "ppp/profile", null, cancellationToken);
+        return list.ValueKind == JsonValueKind.Array
+            ? list.EnumerateArray().Select(e => Str(e, "name")).OfType<string>().ToList()
+            : [];
+    }
+
     private static Dictionary<string, string> Body(RouterSecretWrite s, bool creating)
     {
         var body = new Dictionary<string, string>

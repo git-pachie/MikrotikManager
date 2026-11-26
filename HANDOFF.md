@@ -46,6 +46,7 @@ All are in `Netora-MikroTik-Manager-V2-Prompts/`:
 | 2026-11-25 | The SMTP user name and password are secrets. Email has an `Enabled` on/off switch and a `UseSsl` setting. Gmail is the provider (`smtp.gmail.com`) |
 | 2026-11-24 | .NET 9. Apps listen on all interfaces over http and https with a plain `dotnet run` |
 | Logging spec | Configurable path per app, separate API and WebUI files, no retention logic, typed user name logged on failed login, no log viewer (`18-logging.md`) |
+| 2026-11-26 | Plans and NAP rules (05/06): no NAP ports or capacity; Managers manage, Staff view; nothing deleted; inactive entries not selectable but kept by customers; Netora maps to existing PPP profiles only; plan edits need no approval and do not resend customers; UNKNOWN built in and read only; Staff and Managers move customers between NAP boxes without approval. Migrated plans use profile = plan name |
 | 2026-11-26 | Module 18 built with a custom daily file logger rather than the suggested Serilog sink, because Serilog cannot name files `netora-api-yyyy-MM-dd.txt` (implementation choice, documented as a deviation) |
 
 ### Assumptions made in module 08, not yet confirmed by the user
@@ -58,7 +59,6 @@ All are in `Netora-MikroTik-Manager-V2-Prompts/`:
 ### Open specifications (do not invent; ask)
 
 - The full customer field schema.
-- The NAP port and capacity model.
 - ONU fields and validation.
 - Diagnostics details.
 - The complete role-permission matrix. Today there are only Manager and Staff, and rules are set per module.
@@ -107,10 +107,12 @@ Browser → Netora.WebUI (MVC, cookie session) → Netora.WebApi (JWT) → SQL S
 | 08 Approvals | Partial | All request types (Create, Disable, Enable, Change Plan, Terminate), before/after summaries, Manager decision once, one pending request per customer, Pending Approvals page per `approvals.html`, Approval Details page (no mockup), emails (MailKit background queue, `Email:Enabled`, `UseSsl`), and a provisioning status per request. **Not done:** sending to the router and Retry (module 09). The Retry button is shown disabled |
 | 13 Settings and Users | **Completed** (router connection test waits for 09) | User Management (add, edit, role, enable/disable, temporary-password reset, last-Manager and self-change guards, sessions end on role change, deactivation and reset), My Profile (name, email, theme, own password), Settings (router details with encrypted password, email on/off and sender stored in `AppSettings`, test email, setup checklist), forced password change in WebUI and API |
 | 09 MikroTik | **Completed against the mock** (REST client not yet tried on a real router) | `IRouterClient` (RouterOS REST or mock, `Router:Mode`), provisioning after approval with Retry, live status and mismatch on the customer profile, Test Connection, Import. Code: `src/Netora.Infrastructure/Router/`, `src/Netora.Application/Router/RouterContracts.cs` |
-| 18 Logging | **Completed** for the modules that exist | Daily files `netora-api-yyyy-MM-dd.txt` / `netora-web-yyyy-MM-dd.txt` (`Logging:File:Path`, defaults `logs/api`, `logs/web`), one line per business event, correlation ID across WebUI and API (`X-Correlation-ID`, also the response `traceId`), no personal data or secrets. Custom `ILoggerProvider` instead of Serilog (file naming, testable clock). Code: `src/Netora.Logging/`, `src/Netora.Application/Logging/ActivityContracts.cs`, `src/Netora.Infrastructure/Persistence/ActivityLogInterceptor.cs`. NAP, ONU, Plans and backup events come with their modules |
+| 05 Internet Plans | **Completed** | `InternetPlans` table (fee, speeds, MikroTik PPP profile, active); customers link by `PlanId`; provisioning sends the plan's profile; Check Router Profiles (read only); Managers edit, Staff view. Pages `/plans`, `/plans/new`, `/plans/{id}/edit` |
+| 06 NAP Boxes | **Completed** | `NapBoxes` table (code, area, description, active; UNKNOWN built in, `IsSystem`); customers link by `NapBoxId`; no ports or capacity (agreed); NAP details with assigned customers and Move to NAP (`PUT /api/v1/customers/{id}/nap`). Pages `/nap-boxes`, `/nap-boxes/new`, `/nap-boxes/{id}` |
+| 18 Logging | **Completed** for the modules that exist | Daily files `netora-api-yyyy-MM-dd.txt` / `netora-web-yyyy-MM-dd.txt` (`Logging:File:Path`, defaults `logs/api`, `logs/web`), one line per business event, correlation ID across WebUI and API (`X-Correlation-ID`, also the response `traceId`), no personal data or secrets. Custom `ILoggerProvider` instead of Serilog (file naming, testable clock). Code: `src/Netora.Logging/`, `src/Netora.Application/Logging/ActivityContracts.cs`, `src/Netora.Infrastructure/Persistence/ActivityLogInterceptor.cs`. Plans and NAP events added with 05/06; ONU and backup events come with their modules |
 | 15 Testing | Partial | 98 automated tests, all passing (`ApprovalTests` 18 methods, `PppoeTests` 20, `CustomerCommandTests` 15, `CustomerAttachmentTests` 12, `CustomerListSortingTests` 5, `CustomerVisibilityTests` 5; theories expand to 98 cases) |
 
-Not started: 05 Plans, 06 NAP Boxes, 07 ONU, 10 Diagnostics, 11 Dashboard, 12 Audit Trail and Backups, 14 Design QA, 16 Reports and Notifications. Their sidebar links return 404.
+Not started: 07 ONU, 10 Diagnostics, 11 Dashboard, 12 Audit Trail and Backups, 14 Design QA, 16 Reports and Notifications. Their sidebar links return 404.
 
 ### Pages (WebUI)
 
@@ -190,7 +192,7 @@ See `README.md` for the full table.
 | **AVG Antivirus blocks Netora's emails on the dev PC** | AVG "Web/Mail Shield" replaces Gmail's certificate with its own, which has no revocation information, so MailKit's revocation check fails with `SslHandshakeException`. A throwaway program with the check off sent a test email through Gmail (`2.0.0 OK`), and the user confirmed it arrived on 2026-11-25. **Fix not chosen:** either an AVG exception for SMTP, or a new setting `Email:Smtp:CheckCertificateRevocation` (default `true`). Servers without AVG are not affected |
 | Email setup on the dev PC | `admin` has no email address yet (set it in My Profile). Approval emails are off until switched on in Settings. On this PC, set `Email:Smtp:CheckCertificateRevocation` to `false` in user-secrets or `appsettings.Development.json` because of AVG |
 | Router not connected | All approved changes stay `ProvisioningStatus = NotSent` and `RouterSyncStatus = NotSent`. Import, Retry, live session and diagnostics are disabled |
-| Plans and NAP are free text | `Customer.PlanName` and `NapBox` are strings. Dropdowns list values already in use. They should become foreign keys with modules 05 and 06 |
+| Migrated plans have no fee or speed | The 3 plans created from existing data (profile = plan name) need their fee, speeds and real PPP profile entered by a Manager |
 | Test data in the dev database | Customers 25–28 are non-sample test records left by earlier checks (`e2e_…`, `ui_…`, `testppeo1`). Each has a pending Create request (REQ-0005…0008) |
 | Staff UI checks for module 04 | Covered by automated tests and the module 08 live checks, not by a separate live Staff run |
 | `.kiro/HANDOFF.md` | It holds the user's instructions for writing this document, not project state. It is left untouched and uncommitted |
@@ -209,6 +211,7 @@ See `README.md` for the full table.
 | Identity and JWT | `src/Netora.Infrastructure/Identity/`, `src/Netora.WebApi/Infrastructure/AuthenticationSetup.cs` |
 | DI wiring | `src/Netora.Application/DependencyInjection.cs`, `src/Netora.Infrastructure/DependencyInjection.cs`, `src/Netora.WebApi/Program.cs`, `src/Netora.WebUI/Program.cs` |
 | WebUI | `src/Netora.WebUI/Controllers/`, `Models/` (view models and label helpers such as `ApprovalLabels`, `PppoeLabels`), `Views/`, `Navigation/NavItems.cs` |
+| Plans and NAP boxes | `src/Netora.Domain/Plans/InternetPlan.cs`, `src/Netora.Domain/Network/NapBox.cs`, `src/Netora.Application/Catalog/CatalogContracts.cs`, `src/Netora.Infrastructure/Catalog/` (`PlanService`, `NapService`), `src/Netora.WebApi/Controllers/CatalogControllers.cs`, WebUI `PlansController`, `NapBoxesController`, `Views/Plans`, `Views/NapBoxes`. Customer move: `CustomerCommands.MoveNapAsync`. Tests: `tests/Netora.Tests/CatalogTests.cs`; `TestDb` now seeds the catalogue (`PlanIds`, `NapIds`) |
 | File logging | `src/Netora.Logging/` (`DailyFileLoggerProvider`, `LogLine` format and cleaning, `ActivityLog`, `Correlation`, `LoggingSetup`), hooks in `SecurityEventWriter`, `RouterProvisioner`, `PppoeImportService`, `RouterConnectionTester`, `RouterStatusService`, `ApprovalCommands`, `ApprovalEmailDispatcher`, `SettingsService`, `CustomersController`, `ApiAuthorizationResultHandler`, `ValidationFailureLogFilter`, WebUI `AccountController`, `BearerTokenHandler`. Tests: `tests/Netora.Tests/LoggingTests.cs` |
 | Docs | `README.md`, `Netora-MikroTik-Manager-V2-Prompts/IMPLEMENTATION_STATUS.md` |
 
@@ -221,9 +224,9 @@ See `README.md` for the full table.
    - Record `Succeeded` or `Failed`, attempts and the last error, and update `RouterSyncStatus`.
    - Enable the Retry button with idempotent retries.
    - Ask first: is a RouterOS 7 test router available, and how are its credentials stored? Use the secrets file or user-secrets.
-3. **05 Internet Plans and 06 NAP Boxes:** turn plan and NAP text into real lists, using `plans.html`, `nap-boxes.html` and `nap-details.html`. The NAP capacity model is an open spec.
+3. ~~05 Internet Plans and 06 NAP Boxes~~: done on 2026-11-26.
 4. ~~13 Settings and Users~~: done on 2026-11-25.
-5. **12 Audit Trail:** an Audit Trail page over `SecurityEvents`, `CustomerActivities` and `ApprovalRequests` (18 Logging is done; add NAP, ONU, Plans and backup events to the file log as those modules are built).
+5. **12 Audit Trail:** an Audit Trail page over `SecurityEvents`, `CustomerActivities` and `ApprovalRequests` (18 Logging is done; add ONU and backup events to the file log as those modules are built).
 6. **The rest:** 07 ONU, 10 Diagnostics, 11 Dashboard, 12 Backups, 16 Reports and Notifications, 14 Design QA, and the 15 handoff tests.
 
 Before each commit:
@@ -237,3 +240,5 @@ _Updated 2026-11-25 after module 13 (116 tests passing; migration `UsersAndSetti
 _Updated 2026-11-25 after module 09 (133 tests passing; migration `RouterIntegration` applied). Next: 05 Plans and 06 NAP, then 18 Logging and 12 Audit._
 
 _Updated 2026-11-26 after module 18 Logging (145 tests passing; no migration). Known noise: the Customers list query logs EF warning `FirstWithoutOrderByAndFilter` to the API file on each load. Next: 05 Plans and 06 NAP, then 12 Audit Trail._
+
+_Updated 2026-11-26 after modules 05 Internet Plans and 06 NAP Boxes (158 tests passing; migration `PlansAndNapBoxes` applied to the dev database). Import now needs a plan whose profile matches the secret. Next: 12 Audit Trail and Backups, then 07 ONU._

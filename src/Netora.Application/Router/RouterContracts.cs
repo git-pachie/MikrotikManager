@@ -63,6 +63,9 @@ public interface IRouterClient
     Task<RouterSecret> UpdateSecretAsync(string id, RouterSecretWrite secret, CancellationToken cancellationToken);
 
     Task<RouterActiveSession?> FindActiveSessionAsync(string name, CancellationToken cancellationToken);
+
+    /// <summary>Names of the router's PPP profiles (/ppp/profile). Read only: Netora never creates or changes profiles.</summary>
+    Task<IReadOnlyList<string>> ListProfilesAsync(CancellationToken cancellationToken);
 }
 
 /// <summary>Sends an approved request to the router and records the outcome on the request (08.04, 04.05).</summary>

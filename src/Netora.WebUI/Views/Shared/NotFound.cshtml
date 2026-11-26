@@ -1,25 +1,24 @@
 @{
     var title = ViewData["NotFoundTitle"] as string ?? "Customer not found";
-    var isUser = title.StartsWith("User", StringComparison.Ordinal);
+    var (nav, text, back, backLabel) = title switch
+    {
+        _ when title.StartsWith("User", StringComparison.Ordinal) => ("users", "This user does not exist.", "/users", "Back to users"),
+        _ when title.StartsWith("Plan", StringComparison.Ordinal) => ("plans", "This plan does not exist.", "/plans", "Back to plans"),
+        _ when title.StartsWith("NAP", StringComparison.Ordinal) => ("nap", "This NAP box does not exist.", "/nap-boxes", "Back to NAP boxes"),
+        _ => ("customers", "This customer does not exist, or you do not have access to it.", "/customers", "Back to customers"),
+    };
     ViewData["Title"] = "Not found";
-    ViewData["Nav"] = isUser ? "users" : "customers";
+    ViewData["Nav"] = nav;
 }
 <div class="heading">
     <div class="heading-title">
         <svg class="icon"><use href="#users" /></svg>
         <div>
             <h1>@title</h1>
-            <p>@(isUser ? "This user does not exist." : "This customer does not exist, or you do not have access to it.")</p>
+            <p>@text</p>
         </div>
     </div>
     <div class="heading-actions">
-        @if (isUser)
-        {
-            <a class="btn btn-outline" href="/users">Back to users</a>
-        }
-        else
-        {
-            <a class="btn btn-outline" href="/customers">Back to customers</a>
-        }
+        <a class="btn btn-outline" href="@back">@backLabel</a>
     </div>
 </div>

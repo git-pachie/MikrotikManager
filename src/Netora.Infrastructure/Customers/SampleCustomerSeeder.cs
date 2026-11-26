@@ -43,6 +43,16 @@ public static class SampleCustomerSeeder
         var db = scope.ServiceProvider.GetRequiredService<NetoraDbContext>();
         if (await db.Customers.AnyAsync(cancellationToken)) return;
 
+        // The plans and NAP boxes the samples use, unless they already exist (UNKNOWN comes from the migration).
+        // Plans map to a PPP profile of the same name, as before module 05.
+        var now = DateTimeOffset.UtcNow;
+        var plans = await db.InternetPlans.ToDictionaryAsync(p => p.Name, cancellationToken);
+        foreach (var name in Rows.Select(r => r.Plan).Distinct().Where(p => !plans.ContainsKey(p)))
+            db.InternetPlans.Add(plans[name] = new Domain.Plans.InternetPlan { Name = name, RouterProfile = name, CreatedAtUtc = now });
+        var naps = await db.NapBoxes.ToDictionaryAsync(x => x.Code, cancellationToken);
+        foreach (var code in Rows.Select(r => r.Nap).Distinct().Where(c => !naps.ContainsKey(c)))
+            db.NapBoxes.Add(naps[code] = new Domain.Network.NapBox { Code = code, IsSystem = code == Customer.UnknownNap, CreatedAtUtc = now });
+
         var n = 0;
         foreach (var r in Rows)
         {
@@ -54,8 +64,8 @@ public static class SampleCustomerSeeder
                 MobileNumber = $"0917 555 {n:0000}",
                 Address = $"Sample Street {n}, Sample City",
                 PppoeUsername = r.User,
-                PlanName = r.Plan,
-                NapBox = r.Nap,
+                Plan = plans[r.Plan],
+                Nap = naps[r.Nap],
                 OnuSerial = r.Onu,
                 Status = r.Status,
                 IsManagerOnly = r.ManagerOnly,

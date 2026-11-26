@@ -4,6 +4,8 @@ using Netora.Application.Approvals;
 using Netora.Application.Pppoe;
 using Netora.Domain.Approvals;
 using Netora.Domain.Customers;
+using Netora.Domain.Network;
+using Netora.Domain.Plans;
 
 namespace Netora.Application.Customers;
 
@@ -25,6 +27,13 @@ internal sealed class CustomerCommands(
         if (request.IsManagerOnly && !actor.IsManager)
             return new CreateCustomerResult(CreateCustomerOutcome.ManagerOnlyNotAllowed);
 
+        // New customers get active plans and NAP boxes only (05, 06).
+        var plan = await repository.FindPlanAsync(request.PlanName.Trim(), cancellationToken);
+        var nap = await repository.FindNapAsync(Clean(request.NapBox) ?? Customer.UnknownNap, cancellationToken);
+        var catalogErrors = CatalogErrors(plan is { IsActive: true }, nap is { IsActive: true });
+        if (catalogErrors is not null)
+            return new CreateCustomerResult(CreateCustomerOutcome.ValidationFailed, Errors: catalogErrors);
+
         var username = request.PppoeUsername.Trim();
         if (await repository.PppoeUsernameExistsAsync(username, null, cancellationToken))
             return DuplicateOnCreate();
@@ -39,8 +48,6 @@ internal sealed class CustomerCommands(
             Address = request.Address.Trim(),
             Notes = Clean(request.Notes),
             PppoeUsername = username,
-            PlanName = request.PlanName.Trim(),
-            NapBox = Clean(request.NapBox) ?? Customer.UnknownNap,
             OnuSerial = Clean(request.OnuSerial),
             OnuModel = Clean(request.OnuModel),
             // Agreed rule: every new customer waits for a Manager's approval. No router call happens here.
@@ -50,6 +57,8 @@ internal sealed class CustomerCommands(
             CreatedAtUtc = now,
             CreatedByUserId = actor.UserId,
         };
+        customer.SetPlan(plan!);
+        customer.SetNap(nap!);
 
         var activity = NewActivity(actor, "CustomerCreated", "Submitted for approval", now);
 
@@ -96,9 +105,11 @@ internal sealed class CustomerCommands(
             return new UpdateCustomerResult(UpdateCustomerOutcome.Conflict);
 
         var username = request.PppoeUsername.Trim();
-        var plan = request.PlanName.Trim();
+        var planName = request.PlanName.Trim();
+        var napCode = Clean(request.NapBox) ?? Customer.UnknownNap;
         var usernameChanged = !string.Equals(username, customer.PppoeUsername, StringComparison.Ordinal);
-        var planChanged = !string.Equals(plan, customer.PlanName, StringComparison.Ordinal);
+        var planChanged = !string.Equals(planName, customer.Plan.Name, StringComparison.Ordinal);
+        var napChanged = !string.Equals(napCode, customer.Nap.Code, StringComparison.Ordinal);
 
         if (customer.ServiceFieldsLocked && (usernameChanged || planChanged))
         {
@@ -109,13 +120,52 @@ internal sealed class CustomerCommands(
             return new UpdateCustomerResult(UpdateCustomerOutcome.ServiceFieldsLocked, errors);
         }
 
+        // A customer keeps an inactive plan or NAP it already has; a new choice must be active.
+        var plan = planChanged ? await repository.FindPlanAsync(planName, cancellationToken) : customer.Plan;
+        var nap = napChanged ? await repository.FindNapAsync(napCode, cancellationToken) : customer.Nap;
+        var catalogErrors = CatalogErrors(!planChanged || plan is { IsActive: true }, !napChanged || nap is { IsActive: true });
+        if (catalogErrors is not null)
+            return new UpdateCustomerResult(UpdateCustomerOutcome.ValidationFailed, catalogErrors);
+
         if (usernameChanged && await repository.PppoeUsernameExistsAsync(username, customer.Id, cancellationToken))
             return DuplicateOnUpdate();
 
-        var changed = ApplyChanges(customer, request, username, plan);
+        var changed = ApplyChanges(customer, request, username, plan!, nap!);
         if (changed.Count == 0)
             return new UpdateCustomerResult(UpdateCustomerOutcome.NoChanges);
 
+        return await SaveAsync(customer, changed, actor, cancellationToken);
+    }
+
+    public async Task<UpdateCustomerResult> MoveNapAsync(int id, MoveNapRequest request, CustomerActor actor,
+        CancellationToken cancellationToken)
+    {
+        var code = Clean(request.NapBox);
+        if (code is null || code.Length > 50)
+            return new UpdateCustomerResult(UpdateCustomerOutcome.ValidationFailed, new Dictionary<string, string[]>
+            {
+                [nameof(MoveNapRequest.NapBox)] = ["Choose a NAP box."],
+            });
+
+        var customer = await repository.FindForUpdateAsync(id, actor.IsManager, cancellationToken);
+        if (customer is null) return new UpdateCustomerResult(UpdateCustomerOutcome.NotFound);
+        if (!customer.CanBeChangedBy(actor.IsManager)) return new UpdateCustomerResult(UpdateCustomerOutcome.Locked);
+        if (!string.Equals(request.ConcurrencyStamp, customer.ConcurrencyStamp, StringComparison.Ordinal))
+            return new UpdateCustomerResult(UpdateCustomerOutcome.Conflict);
+        if (string.Equals(code, customer.Nap.Code, StringComparison.Ordinal))
+            return new UpdateCustomerResult(UpdateCustomerOutcome.NoChanges);
+
+        var nap = await repository.FindNapAsync(code, cancellationToken);
+        if (CatalogErrors(true, nap is { IsActive: true }) is { } errors)
+            return new UpdateCustomerResult(UpdateCustomerOutcome.ValidationFailed, errors);
+
+        customer.SetNap(nap!);
+        return await SaveAsync(customer, ["NAP Box"], actor, cancellationToken);
+    }
+
+    private async Task<UpdateCustomerResult> SaveAsync(Customer customer, List<string> changed, CustomerActor actor,
+        CancellationToken cancellationToken)
+    {
         var now = DateTimeOffset.UtcNow;
         var expectedStamp = customer.ConcurrencyStamp;
         customer.UpdatedAtUtc = now;
@@ -139,7 +189,7 @@ internal sealed class CustomerCommands(
     }
 
     /// <summary>Copies the edited values onto the customer and returns the display names of the fields that changed.</summary>
-    private static List<string> ApplyChanges(Customer c, UpdateCustomerRequest r, string username, string plan)
+    private static List<string> ApplyChanges(Customer c, UpdateCustomerRequest r, string username, InternetPlan plan, NapBox nap)
     {
         var changed = new List<string>();
 
@@ -157,12 +207,22 @@ internal sealed class CustomerCommands(
         Set("Installation Address", c.Address, r.Address.Trim(), v => c.Address = v);
         Set("Notes", c.Notes, Clean(r.Notes), v => c.Notes = v);
         Set("PPPoE Username", c.PppoeUsername, username, v => c.PppoeUsername = v);
-        Set("Internet Plan", c.PlanName, plan, v => c.PlanName = v);
-        Set("NAP Box", c.NapBox, Clean(r.NapBox) ?? Customer.UnknownNap, v => c.NapBox = v);
+        Set("Internet Plan", c.PlanId, plan.Id, _ => c.SetPlan(plan));
+        Set("NAP Box", c.NapBoxId, nap.Id, _ => c.SetNap(nap));
         Set("ONU Serial Number", c.OnuSerial, Clean(r.OnuSerial), v => c.OnuSerial = v);
         Set("ONU Brand / Model", c.OnuModel, Clean(r.OnuModel), v => c.OnuModel = v);
         Set("Visibility", c.IsManagerOnly, r.IsManagerOnly, v => c.IsManagerOnly = v);
         return changed;
+    }
+
+    /// <summary>Field errors for a plan or NAP that does not exist or is inactive; null when both are fine.</summary>
+    internal static Dictionary<string, string[]>? CatalogErrors(bool planOk, bool napOk)
+    {
+        if (planOk && napOk) return null;
+        var errors = new Dictionary<string, string[]>();
+        if (!planOk) errors[nameof(CreateCustomerRequest.PlanName)] = ["Choose an active Internet Plan."];
+        if (!napOk) errors[nameof(CreateCustomerRequest.NapBox)] = ["Choose an active NAP box."];
+        return errors;
     }
 
     private static CustomerActivity NewActivity(CustomerActor actor, string action, string? detail,

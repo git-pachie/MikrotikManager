@@ -77,8 +77,11 @@ public sealed record CreateCustomerResult(
 
 public sealed record CreatedCustomerDto(int Id, string Status);
 
-/// <summary>Provisional dropdown options until modules 05 (Plans) and 06 (NAP) provide real lists.</summary>
+/// <summary>Active plans and NAP boxes for the customer form (NAP always includes UNKNOWN first).</summary>
 public sealed record CustomerFormOptionsDto(IReadOnlyList<string> Plans, IReadOnlyList<string> NapBoxes);
+
+/// <summary>Moves a customer to another NAP box (06.02). No approval and no router call.</summary>
+public sealed record MoveNapRequest(string NapBox, string ConcurrencyStamp);
 
 /// <summary>The signed-in user performing a command. Built from the server-side token, never from request data.</summary>
 public sealed record CustomerActor(string UserId, string UserName, bool IsManager);
@@ -89,5 +92,9 @@ public interface ICustomerCommands
         CancellationToken cancellationToken);
 
     Task<UpdateCustomerResult> UpdateAsync(int id, UpdateCustomerRequest request, CustomerActor actor,
+        CancellationToken cancellationToken);
+
+    /// <summary>Staff and Managers; same visibility and termination rules as editing.</summary>
+    Task<UpdateCustomerResult> MoveNapAsync(int id, MoveNapRequest request, CustomerActor actor,
         CancellationToken cancellationToken);
 }

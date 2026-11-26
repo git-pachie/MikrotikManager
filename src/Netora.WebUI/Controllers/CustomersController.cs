@@ -288,8 +288,13 @@ public class CustomersController(INetoraApiClient apiClient) : Controller
         var options = await apiClient.GetCustomerFormOptionsAsync(cancellationToken);
         if (options.Success && options.Data is not null)
         {
-            model.PlanOptions = options.Data.Plans;
-            model.NapOptions = options.Data.NapBoxes;
+            // Only active plans and NAP boxes are offered; a customer keeps a current one that was deactivated since.
+            var plans = options.Data.Plans.ToList();
+            if (model.IsEdit && !string.IsNullOrEmpty(model.PlanName) && !plans.Contains(model.PlanName)) plans.Insert(0, model.PlanName);
+            var naps = options.Data.NapBoxes.ToList();
+            if (model.IsEdit && !string.IsNullOrEmpty(model.NapBox) && !naps.Contains(model.NapBox)) naps.Insert(1, model.NapBox);
+            model.PlanOptions = plans;
+            model.NapOptions = naps;
         }
         else
         {

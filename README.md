@@ -29,6 +29,8 @@ Specs, approved mockups and module prompts are in `Netora-MikroTik-Manager-V2-Pr
 | Users and Settings | `/users`, `/settings` (Managers), `/profile` (everyone) | Add, edit, enable/disable and password reset with a temporary password; router details (password encrypted) and email settings with a test email; own name, email, theme and password |
 
 | MikroTik | `/settings`, `/approvals/{id}`, `/customers/{id}`, `/pppoe/import` | Approved changes sent to the router with Retry, live status and Configuration Mismatch on the customer profile, Test Connection, Import. Uses a mock router until `Router:Mode` is `RouterOS` |
+| Internet Plans | `/plans`, `/plans/new`, `/plans/{id}/edit` | Plan catalogue with fee, speeds and the MikroTik PPP profile each plan maps to; Check Router Profiles. Managers add, edit and deactivate; Staff view |
+| NAP Boxes | `/nap-boxes`, `/nap-boxes/new`, `/nap-boxes/{id}` | NAP list with customer counts, details with assigned customers, move customers between NAP boxes, UNKNOWN review. Managers add and edit; Staff view and move |
 | Logging | none (server files) | Daily text files `netora-api-yyyy-MM-dd.txt` and `netora-web-yyyy-MM-dd.txt`, see [Log files](#log-files) |
 
 The other sidebar pages are not built yet.
@@ -196,7 +198,7 @@ One event per line:
 
 - **Fields, in order:** time with UTC offset, level (`INF`, `WRN`, `ERR`), category, event, `actor` (user name or `anonymous`), `role`, `target` (entity and ID), `outcome`, `ip`, `corr`, `detail`. Optional fields are left out when empty. Values with spaces are in quotes. An exception follows on indented lines.
 - **Correlation ID (`corr`):** the same value appears in the WebUI file, the API file and the `traceId` of API responses, so one action can be followed across both apps. The WebUI sends it to the API in the `X-Correlation-ID` header.
-- **API events:** LoginSucceeded, LoginFailed, LockoutTriggered, Logout, PasswordChanged; CustomerCreated, CustomerUpdated (changed field names), CustomerAccessDenied (Staff opening a Manager-only customer), attachments; PppoeUpdated, ImportStarted, ImportCompleted, AccountCreated, AccountSuspended, AccountReactivated, PlanChanged, AccountTerminated; RequestSubmitted, RequestApproved, RequestRejected, ProvisioningSucceeded, ProvisioningFailed, RetryAttempted; UserCreated, RoleChanged, UserDeactivated, UserReactivated and other user changes, SettingsUpdated; ConnectionTested, RouterError; UnhandledException, ValidationFailed (field names), AuthorizationDenied, EmailDeliveryFailed.
+- **API events:** LoginSucceeded, LoginFailed, LockoutTriggered, Logout, PasswordChanged; CustomerCreated, CustomerUpdated (changed field names), CustomerAccessDenied (Staff opening a Manager-only customer), attachments; PppoeUpdated, ImportStarted, ImportCompleted, AccountCreated, AccountSuspended, AccountReactivated, PlanChanged, AccountTerminated; RequestSubmitted, RequestApproved, RequestRejected, ProvisioningSucceeded, ProvisioningFailed, RetryAttempted; UserCreated, RoleChanged, UserDeactivated, UserReactivated and other user changes, SettingsUpdated; PlanCreated, PlanUpdated, PlanDeactivated, PlanReactivated, NapCreated, NapUpdated, NapDeactivated, NapReactivated (moving a customer is CustomerUpdated with `Changed: NAP Box`); ConnectionTested, RouterError; UnhandledException, ValidationFailed (field names), AuthorizationDenied, EmailDeliveryFailed.
 - **WebUI events:** LoginSucceeded, LoginFailed, Logout and UnhandledException.
 - **Never written:** passwords, tokens, cookies, connection strings, router or SMTP credentials, request bodies, customer names, phone numbers, addresses, free-text reasons and notes. A failed login records the user name exactly as typed (control characters removed, at most 256 characters), so a password typed into the user name box would appear: keep the folder restricted.
 - **If the file cannot be written** (disk full, no permission), the request still completes and the problem is printed to the console.
@@ -241,13 +243,23 @@ Netora talks to one RouterOS 7 router over the REST API (HTTPS). It never delete
 - **Safety:** creation never overwrites a secret Netora did not create (Netora marks its own secrets with `[netora:NET-0000]` in the comment). Mismatches are shown, never fixed automatically.
 - **Mock mode:** `Router:Mode = Mock` uses a pretend router. Every page that shows router data says "Mock router".
 
+## Internet Plans and NAP Boxes
+
+- **Plans:** each plan has a name, monthly fee (₱), download and upload speed, and the exact name of a PPP profile that already exists on the router. Netora sends that profile when it creates or updates a customer's PPPoE secret; it never creates or changes profiles. **Check Router Profiles** on the plans page lists which profiles exist on the router.
+- **Changing a plan** in the catalogue needs no approval and does not resend customers. If the profile changes, customers on the plan show a Configuration Mismatch until a Manager-approved change is sent for them. Moving a customer to another plan is still a Change Plan request.
+- **NAP boxes:** code, area, description and status. No ports or capacity are tracked. **UNKNOWN** is built in and cannot be edited; imported accounts start there. Staff and Managers move customers between NAP boxes from the NAP details page or the customer form; no approval, no router change.
+- **Inactive** plans and NAP boxes cannot be chosen for new customers, plan changes or moves; customers already on them keep them. Nothing is deleted.
+- **Import** now needs a plan whose MikroTik profile matches the secret's profile; secrets with an unmapped profile show "Cannot import" until such a plan exists.
+- **Upgrading an existing database:** the migration `PlansAndNapBoxes` turns every plan name and NAP code in use into catalogue entries (profile = plan name, fees and speeds empty) and links customers to them by ID.
+
 ### Connecting a real router
 
 1. On the router, create a dedicated user for Netora (a group with `read`, `write`, `api` and `rest-api` policies), enable the `www-ssl` service with a certificate, and restrict `www-ssl` to the Netora server's address (`/ip service set www-ssl address=<server-ip>/32`).
 2. In `src/Netora.WebApi/appsettings.json` (or `appsettings.Production.json` on the server), set `"Router": { "Mode": "RouterOS" }` and restart the API.
 3. In **Settings**, enter the router address, HTTPS port, API user name and password. If the router uses a self-signed certificate, also enter its SHA-256 fingerprint; only that exact certificate is then accepted.
 4. Press **Test Connection**. It should report the router's identity and RouterOS version.
-5. Use **PPPoE Management > Import Accounts** to bring existing secrets into Netora (scan, review, confirm).
+5. On **Internet Plans**, set each plan's MikroTik profile to a profile that exists on the router, then press **Check Router Profiles**.
+6. Use **PPPoE Management > Import Accounts** to bring existing secrets into Netora (scan, review, confirm).
 
 ## Run locally
 

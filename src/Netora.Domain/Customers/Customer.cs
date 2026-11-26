@@ -26,12 +26,11 @@ public enum CustomerStatus
 
 /// <summary>
 /// PROVISIONAL schema, taken from the approved Add/Edit Customer form (customer-form.html), approved by the user
-/// on 2026-11-24. Plan and NAP are plain text until modules 05 and 06 add their own tables, at which point they
-/// become foreign keys.
+/// on 2026-11-24. Plan and NAP are linked to the Internet Plans (05) and NAP Boxes (06) catalogues by ID.
 /// </summary>
 public sealed class Customer
 {
-    public const string UnknownNap = "UNKNOWN";
+    public const string UnknownNap = Network.NapBox.UnknownCode;
 
     public int Id { get; set; }
     public string FirstName { get; set; } = string.Empty;
@@ -41,8 +40,26 @@ public sealed class Customer
     public string? Address { get; set; }
     public string? Notes { get; set; }
     public string PppoeUsername { get; set; } = string.Empty;
-    public string PlanName { get; set; } = string.Empty;
-    public string NapBox { get; set; } = UnknownNap;
+
+    public int PlanId { get; set; }
+    public Plans.InternetPlan Plan { get; set; } = null!;
+
+    public int NapBoxId { get; set; }
+    public Network.NapBox Nap { get; set; } = null!;
+
+    /// <summary>Sets the plan and its ID together, so code never has one without the other.</summary>
+    public void SetPlan(Plans.InternetPlan plan)
+    {
+        Plan = plan;
+        PlanId = plan.Id;
+    }
+
+    public void SetNap(Network.NapBox nap)
+    {
+        Nap = nap;
+        NapBoxId = nap.Id;
+    }
+
     public string? OnuSerial { get; set; }
     public string? OnuModel { get; set; }
     public CustomerStatus Status { get; set; } = CustomerStatus.PendingApproval;

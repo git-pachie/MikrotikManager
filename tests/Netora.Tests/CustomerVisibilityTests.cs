@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Netora.Application.Customers;
 
 namespace Netora.Tests;
@@ -48,12 +49,31 @@ public class CustomerVisibilityTests
         await using var db = t.NewContext();
 
         var staff = await t.Queries(db).ListAsync(new CustomerListQuery(), false, default);
-        var options = await t.Queries(db).GetFormOptionsAsync(false, default);
 
+        // The list filters come from the customers the viewer may see.
         Assert.DoesNotContain("NAP-02", staff.NapOptions);
         Assert.DoesNotContain("Fiber 50 Mbps", staff.PlanOptions);
-        Assert.DoesNotContain("NAP-02", options.NapBoxes);
-        Assert.DoesNotContain("Fiber 50 Mbps", options.Plans);
+    }
+
+    [Fact]
+    public async Task Form_options_are_the_active_catalogue_for_everyone()
+    {
+        var t = new TestDb(); t.Seed();
+        await using (var db = t.NewContext())
+        {
+            (await db.InternetPlans.SingleAsync(p => p.Name == "Fiber 300 Mbps")).IsActive = false;
+            (await db.NapBoxes.SingleAsync(n => n.Code == "NAP-03")).IsActive = false;
+            await db.SaveChangesAsync();
+        }
+
+        await using var read = t.NewContext();
+        var staff = await t.Queries(read).GetFormOptionsAsync(false, default);
+        var manager = await t.Queries(read).GetFormOptionsAsync(true, default);
+
+        Assert.Equal(["Fiber 100 Mbps", "Fiber 30 Mbps", "Fiber 50 Mbps"], staff.Plans);
+        Assert.Equal(["UNKNOWN", "NAP-01", "NAP-02"], staff.NapBoxes);
+        Assert.Equal(staff.Plans, manager.Plans);
+        Assert.Equal(staff.NapBoxes, manager.NapBoxes);
     }
 
     [Fact]

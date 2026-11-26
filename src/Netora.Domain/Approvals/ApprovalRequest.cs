@@ -64,6 +64,9 @@ public sealed class ApprovalRequest
     public string? After { get; set; }
 
     /// <summary>The requested plan for <see cref="ApprovalOperation.ChangePlan"/>.</summary>
+    public int? TargetPlanId { get; set; }
+
+    /// <summary>Name of <see cref="TargetPlanId"/> when the request was made, kept for history if the plan is renamed.</summary>
     public string? TargetPlanName { get; set; }
 
     public string RequestedByUserId { get; set; } = string.Empty;

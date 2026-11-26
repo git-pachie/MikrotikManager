@@ -72,6 +72,16 @@ internal sealed class MockRouterClient(
             return x is { Online: true, Disabled: false } ? new RouterActiveSession(x.Name, x.Address, "3d4h12m", "AA:BB:CC:00:00:" + x.Id.TrimStart('*').PadLeft(2, '0')[^2..]) : null;
         }, save: false, cancellationToken);
 
+    /// <summary>
+    /// The mock's PPP profiles: those saved when it was seeded, or for an older state file the profiles its secrets
+    /// use. RouterOS always has "default".
+    /// </summary>
+    public Task<IReadOnlyList<string>> ListProfilesAsync(CancellationToken cancellationToken)
+        => WithStateAsync<IReadOnlyList<string>>(s =>
+            (s.Profiles ?? s.Secrets.Select(x => x.Profile).OfType<string>().ToList())
+                .Append("default").Distinct(StringComparer.Ordinal).Order(StringComparer.OrdinalIgnoreCase).ToList(),
+            save: false, cancellationToken);
+
     private void FailIfConfigured()
     {
         if (options.CurrentValue.Mock.FailWrites)
@@ -125,16 +135,20 @@ internal sealed class MockRouterClient(
     {
         using var scope = scopes.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<NetoraDbContext>();
-        var customers = await db.Customers.AsNoTracking()
+        var customers = await db.Customers.AsNoTracking().Include(c => c.Plan)
             .Where(c => c.Status == CustomerStatus.Active || c.Status == CustomerStatus.Disabled)
             .OrderBy(c => c.Id).ToListAsync(cancellationToken);
 
-        var state = new MockState();
+        // Every plan's profile exists on the mock, so Check Router on the Plans page shows them as found.
+        var state = new MockState
+        {
+            Profiles = await db.InternetPlans.AsNoTracking().Select(p => p.RouterProfile).Distinct().ToListAsync(cancellationToken),
+        };
         foreach (var c in customers)
         {
             state.Secrets.Add(new MockSecret
             {
-                Id = $"*{++state.NextId:X}", Name = c.PppoeUsername, Password = "mock-password", Profile = c.PlanName,
+                Id = $"*{++state.NextId:X}", Name = c.PppoeUsername, Password = "mock-password", Profile = c.Plan.RouterProfile,
                 Disabled = c.Status != CustomerStatus.Active, Comment = RouterRules.Comment(c.Id, null), Service = "pppoe",
                 RemoteAddress = c.PppoeRemoteAddress, LocalAddress = c.PppoeLocalAddress,
                 Online = c.Status == CustomerStatus.Active && state.NextId % 4 != 0,
@@ -163,6 +177,9 @@ internal sealed class MockRouterClient(
     {
         public int NextId { get; set; }
         public List<MockSecret> Secrets { get; set; } = [];
+
+        /// <summary>Null in state files written before module 05.</summary>
+        public List<string>? Profiles { get; set; }
     }
 
     private sealed class MockSecret

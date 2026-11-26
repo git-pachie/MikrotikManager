@@ -26,6 +26,7 @@ internal sealed class ApprovalRequestConfiguration : IEntityTypeConfiguration<Ap
         builder.Property(r => r.ProvisioningError).HasMaxLength(500);
 
         builder.HasOne<Customer>().WithMany().HasForeignKey(r => r.CustomerId).OnDelete(DeleteBehavior.NoAction);
+        builder.HasOne<Domain.Plans.InternetPlan>().WithMany().HasForeignKey(r => r.TargetPlanId).OnDelete(DeleteBehavior.Restrict);
         builder.HasIndex(r => new { r.Status, r.RequestedAtUtc });
 
         // One open request per customer, so the same change cannot be requested (or approved) twice.

@@ -22,7 +22,7 @@ public class ApprovalTests
     private static async Task<Customer> CustomerOf(TestDb t, int id)
     {
         await using var db = t.NewContext();
-        return await db.Customers.SingleAsync(c => c.Id == id);
+        return await db.Customers.Include(c => c.Plan).Include(c => c.Nap).SingleAsync(c => c.Id == id);
     }
 
     private static async Task<int> CreateCustomerAsync(TestDb t, string username = "new_user", bool asManager = false)
@@ -155,14 +155,14 @@ public class ApprovalTests
             Assert.Equal("Plan Fiber 100 Mbps", r.Request.Before);
             Assert.Equal("Plan Fiber 300 Mbps", r.Request.After);
         }
-        Assert.Equal("Fiber 100 Mbps", (await CustomerOf(t, ids.Normal)).PlanName);
+        Assert.Equal("Fiber 100 Mbps", (await CustomerOf(t, ids.Normal)).Plan.Name);
 
         var request = await PendingOf(t, ids.Normal);
         await using (var db = t.NewContext())
             Assert.Equal(PppoeOutcome.Ok, (await Approvals(t, db).DecideAsync(request.Id, new DecidePppoeRequest(true, null), TestDb.Manager, default)).Outcome);
 
         var customer = await CustomerOf(t, ids.Normal);
-        Assert.Equal("Fiber 300 Mbps", customer.PlanName);
+        Assert.Equal("Fiber 300 Mbps", customer.Plan.Name);
         Assert.Equal(CustomerStatus.Active, customer.Status);
     }
 
@@ -226,7 +226,7 @@ public class ApprovalTests
         }
 
         var customer = await CustomerOf(t, ids.Normal);
-        Assert.Equal("Fiber 30 Mbps", customer.PlanName);
+        Assert.Equal("Fiber 30 Mbps", customer.Plan.Name);
         Assert.Equal(CustomerStatus.Terminated, customer.Status);
         Assert.Empty(t.Notifier.Submitted);   // nothing to review, so no email to Managers
     }
@@ -260,7 +260,7 @@ public class ApprovalTests
         await using (var db = t.NewContext())
         {
             var c = await db.Customers.SingleAsync(x => x.Id == ids.Normal);
-            c.PlanName = "Fiber 30 Mbps";
+            c.PlanId = t.PlanIds["Fiber 30 Mbps"];
             await db.SaveChangesAsync();
         }
 

@@ -1,0 +1,13 @@
+@model NapFormViewModel
+@* NAP code, area, description and status, shared by Add NAP Box and NAP Box Details (layout of nap-details.html). *@
+<div class="module-fields">
+    <label>NAP Code *<input asp-for="Code" required maxlength="50" autocomplete="off" placeholder="NAP-01"><span asp-validation-for="Code" class="field-error"></span></label>
+    <label>Area<input asp-for="Area" maxlength="100" placeholder="San Josef Sur"><span asp-validation-for="Area" class="field-error"></span></label>
+    <label>Description<input asp-for="Description" maxlength="200" placeholder="Main street"><span asp-validation-for="Description" class="field-error"></span></label>
+    <label>Status
+        <select name="IsActive">
+            <option value="true" selected="@Model.IsActive">Active</option>
+            <option value="false" selected="@(!Model.IsActive)">Inactive</option>
+        </select>
+    </label>
+</div>

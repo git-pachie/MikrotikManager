@@ -40,7 +40,7 @@ internal sealed class RouterProvisioner(
             if (request.Status != ApprovalStatus.Approved || request.ProvisioningStatus == ProvisioningStatus.Succeeded)
                 return new ProvisioningResult(request.ProvisioningStatus.ToString(), request.ProvisioningError, request.ProvisioningAttempts);
 
-            var customer = await db.Customers.FirstAsync(c => c.Id == request.CustomerId, cancellationToken);
+            var customer = await db.Customers.Include(c => c.Plan).FirstAsync(c => c.Id == request.CustomerId, cancellationToken);
             var now = DateTimeOffset.UtcNow;
             string? error = null;
             string? errorKind = null;
@@ -98,7 +98,8 @@ internal sealed class RouterProvisioner(
         var desired = new RouterSecretWrite(
             customer.PppoeUsername,
             customer.PppoePasswordProtected is null ? null : passwords.Unprotect(customer.PppoePasswordProtected),
-            customer.PlanName,
+            // The plan's mapped PPP profile (module 05). Netora never creates profiles; a missing one fails on the router.
+            customer.Plan.RouterProfile,
             Disabled: customer.Status is CustomerStatus.Disabled or CustomerStatus.Terminated,
             RouterRules.Comment(customer.Id, customer.PppoeComment),
             customer.PppoeRemoteAddress,

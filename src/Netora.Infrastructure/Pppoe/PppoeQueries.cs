@@ -28,7 +28,7 @@ internal sealed class PppoeQueries(NetoraDbContext db) : IPppoeQueries
         if (!string.IsNullOrEmpty(search))
         {
             filtered = filtered.Where(c => c.PppoeUsername.Contains(search) || c.FirstName.Contains(search)
-                                           || c.LastName.Contains(search) || c.PlanName.Contains(search));
+                                           || c.LastName.Contains(search) || c.Plan.Name.Contains(search));
         }
 
         filtered = query.State?.Trim().ToLowerInvariant() switch
@@ -51,7 +51,7 @@ internal sealed class PppoeQueries(NetoraDbContext db) : IPppoeQueries
             .Take(pageSize)
             .Select(c => new
             {
-                c.Id, c.FirstName, c.LastName, c.PppoeUsername, c.PlanName, c.Status, c.RouterSyncStatus,
+                c.Id, c.FirstName, c.LastName, c.PppoeUsername, PlanName = c.Plan.Name, c.Status, c.RouterSyncStatus,
                 PasswordSet = c.PppoePasswordProtected != null,
                 Pending = pending.Where(r => r.CustomerId == c.Id).Select(r => (ApprovalOperation?)r.Operation).FirstOrDefault(),
             })
@@ -66,7 +66,7 @@ internal sealed class PppoeQueries(NetoraDbContext db) : IPppoeQueries
 
     public async Task<PppoeDetailDto?> GetAsync(int customerId, bool viewerIsManager, CancellationToken cancellationToken)
     {
-        var c = await db.Customers.AsNoTracking()
+        var c = await db.Customers.AsNoTracking().Include(x => x.Plan)
             .FirstOrDefaultAsync(x => x.Id == customerId && (viewerIsManager || !x.IsManagerOnly), cancellationToken);
         if (c is null) return null;
 
@@ -80,7 +80,7 @@ internal sealed class PppoeQueries(NetoraDbContext db) : IPppoeQueries
 
         return new PppoeDetailDto(
             c.Id, Customer.DisplayId(c.Id), Name(c.FirstName, c.LastName), c.Status.ToString(), PppoeStates.AccountState(c.Status),
-            c.PppoeUsername, c.PlanName, c.PppoePasswordProtected != null, c.PppoeRemoteAddress, c.PppoeLocalAddress,
+            c.PppoeUsername, c.Plan.Name, c.PppoePasswordProtected != null, c.PppoeRemoteAddress, c.PppoeLocalAddress,
             c.PppoeComment, c.RouterSyncStatus.ToString(), c.ConcurrencyStamp,
             CanEdit: c.PppoeDetailsEditableBy(viewerIsManager),
             ServiceFieldsLocked: c.ServiceFieldsLocked,
@@ -103,7 +103,7 @@ internal sealed class PppoeQueries(NetoraDbContext db) : IPppoeQueries
             "customer" => desc
                 ? source.OrderByDescending(c => c.LastName).ThenByDescending(c => c.FirstName).ThenBy(c => c.Id)
                 : source.OrderBy(c => c.LastName).ThenBy(c => c.FirstName).ThenBy(c => c.Id),
-            "plan" => desc ? source.OrderByDescending(c => c.PlanName).ThenBy(c => c.Id) : source.OrderBy(c => c.PlanName).ThenBy(c => c.Id),
+            "plan" => desc ? source.OrderByDescending(c => c.Plan.Name).ThenBy(c => c.Id) : source.OrderBy(c => c.Plan.Name).ThenBy(c => c.Id),
             "state" => desc ? source.OrderByDescending(c => c.Status).ThenBy(c => c.Id) : source.OrderBy(c => c.Status).ThenBy(c => c.Id),
             "requested" => desc
                 ? source.OrderByDescending(c => pending.Any(r => r.CustomerId == c.Id)).ThenBy(c => c.Id)

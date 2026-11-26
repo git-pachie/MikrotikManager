@@ -64,11 +64,13 @@ internal sealed class PppoeImportService(
             var (first, last) = SplitName(RouterRules.StripMarker(s.Comment), s.Name);
             var customer = new Customer
             {
+                // Classify("New") guarantees a plan for this profile.
                 FirstName = first,
                 LastName = last,
                 PppoeUsername = s.Name,
-                PlanName = string.IsNullOrWhiteSpace(s.Profile) ? "default" : s.Profile.Trim(),
-                NapBox = Customer.UnknownNap,
+                // IDs only (no navigation): the change tracker may be cleared after a failed insert below.
+                PlanId = known.PlanIdsByProfile[s.Profile!.Trim()],
+                NapBoxId = known.UnknownNapId,
                 Status = s.Disabled ? CustomerStatus.Disabled : CustomerStatus.Active,
                 PppoePasswordProtected = string.IsNullOrEmpty(s.Password) ? null : passwords.Protect(s.Password),
                 PppoeRemoteAddress = s.RemoteAddress,
@@ -130,15 +132,25 @@ internal sealed class PppoeImportService(
         }
     }
 
-    private sealed record Known(HashSet<string> Names, Dictionary<string, int> ByName, HashSet<string> SecretIds);
+    private sealed record Known(HashSet<string> Names, Dictionary<string, int> ByName, HashSet<string> SecretIds,
+        Dictionary<string, int> PlanIdsByProfile, int UnknownNapId);
 
     private async Task<Known> KnownAsync(CancellationToken ct)
     {
         var rows = await db.Customers.AsNoTracking().Select(c => new { c.Id, c.PppoeUsername, c.RouterSecretId }).ToListAsync(ct);
         var byName = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         foreach (var r in rows) byName.TryAdd(r.PppoeUsername, r.Id);
+
+        // An imported account gets the plan mapped to its router profile (module 05); active plans win, then the oldest.
+        var plans = await db.InternetPlans.AsNoTracking().OrderByDescending(p => p.IsActive).ThenBy(p => p.Id)
+            .Select(p => new { p.Id, p.RouterProfile }).ToListAsync(ct);
+        var byProfile = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var p in plans) byProfile.TryAdd(p.RouterProfile, p.Id);
+        var unknownNap = await db.NapBoxes.AsNoTracking().Where(n => n.Code == Customer.UnknownNap).Select(n => n.Id).FirstAsync(ct);
+
         return new Known(new HashSet<string>(rows.Select(r => r.PppoeUsername), StringComparer.OrdinalIgnoreCase), byName,
-            rows.Where(r => r.RouterSecretId != null).Select(r => r.RouterSecretId!).ToHashSet(StringComparer.Ordinal));
+            rows.Where(r => r.RouterSecretId != null).Select(r => r.RouterSecretId!).ToHashSet(StringComparer.Ordinal),
+            byProfile, unknownNap);
     }
 
     private static ImportCandidateDto Classify(RouterSecret s, Known known)
@@ -152,6 +164,9 @@ internal sealed class PppoeImportService(
             return new(s.Name, s.Profile, s.Disabled, comment, "Not PPPoE", $"service is {s.Service}", null);
         if (!UserNamePattern.IsMatch(s.Name))
             return new(s.Name, s.Profile, s.Disabled, comment, "Cannot import", "username is not 3 to 40 letters, digits, '.', '_' or '-'", null);
+        if (string.IsNullOrWhiteSpace(s.Profile) || !known.PlanIdsByProfile.ContainsKey(s.Profile.Trim()))
+            return new(s.Name, s.Profile, s.Disabled, comment, "Cannot import",
+                $"no Internet Plan uses the PPP profile '{s.Profile ?? "(none)"}'. Add or edit a plan with that profile first", null);
         return new(s.Name, s.Profile, s.Disabled, comment, "New", null, null);
     }
 
