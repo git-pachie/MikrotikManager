@@ -15,6 +15,9 @@ namespace Netora.Tests;
 /// <summary>In-memory router for tests. Counts writes and can be told to be unreachable.</summary>
 public sealed class FakeRouter : IRouterClient
 {
+    public Task<IReadOnlyList<RouterPppoeLog>> ReadPppoeLogsAsync(string name, CancellationToken cancellationToken)
+        => Task.FromResult<IReadOnlyList<RouterPppoeLog>>([]);
+
     public List<RouterSecret> Secrets { get; } = [];
     public int Creates { get; private set; }
     public int Updates { get; private set; }
@@ -302,6 +305,22 @@ public class RouterTests
     // ----- 09.03 / 09.04 status and mismatch -----
 
     [Fact]
+    public async Task Retrying_an_old_creation_cannot_recreate_a_terminated_account()
+    {
+        using var fixture = new TestDb();
+        var ids = fixture.Seed();
+        var requestId = await ApprovedAsync(fixture, ids.Terminated, ApprovalOperation.CreatePppoe);
+        var router = new FakeRouter();
+        await using var db = fixture.NewContext();
+
+        var result = await Provisioner(db, router).ProvisionAsync(requestId, "manager-id", "manager", default);
+
+        Assert.Equal("Superseded", result.Status);
+        Assert.Empty(router.Secrets);
+        Assert.Equal(0, router.Creates);
+    }
+
+    [Fact]
     public async Task Status_reports_mismatches_without_changing_anything()
     {
         var t = new TestDb(); var ids = t.Seed();
@@ -319,7 +338,7 @@ public class RouterTests
         Assert.Contains(status.Mismatches, m => m.Field == "Profile (Internet Plan)" && m.Expected == "Fiber 100 Mbps" && m.Actual == "Fiber 30 Mbps");
         Assert.Contains(status.Mismatches, m => m.Field == "Secret state" && m.Expected == "Enabled");
         Assert.Equal(0, router.Updates);
-        Assert.False(status.SessionActive);   // a disabled secret has no session check
+        Assert.True(status.SessionActive);   // An established session can outlive a change to the secret.
     }
 
     [Fact]

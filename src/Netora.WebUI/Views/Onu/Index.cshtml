@@ -1,0 +1,98 @@
+@model OnuHistoryViewModel
+@{
+    ViewData["Title"] = "ONU History";
+    ViewData["Nav"] = "onu";
+    var history = Model.History;
+}
+<div class="heading">
+    <div class="heading-title"><svg class="icon"><use href="#calendar" /></svg><div><h1>ONU History</h1><p>Track subscriber ONU devices and replacements.</p></div></div>
+    <div class="heading-actions"><a class="btn btn-outline" href="/customers">Customers</a></div>
+</div>
+@if (TempData[Netora.WebUI.Controllers.CustomersController.ToastKey] is string toast)
+{
+    <div class="form-success" role="status">@toast</div>
+}
+@if ((TempData[Netora.WebUI.Controllers.CustomersController.ErrorKey] as string ?? Model.Error) is string error)
+{
+    <div class="form-alert" role="alert">@error</div>
+}
+<form action="/onu-history" method="get" class="panel filters approval-filter onu-filter">
+    @if (Model.CustomerId.HasValue)
+    {
+        <input type="hidden" name="customerId" value="@Model.CustomerId">
+    }
+    <div class="field"><label for="search">Search by customer, username or serial number</label><input id="search" name="search" value="@Model.Search" maxlength="100"></div>
+    <button class="btn btn-primary" type="submit">Search</button>
+    @if (Model.CustomerId.HasValue)
+    {
+        <a class="btn btn-outline" href="/onu-history">All Customers</a>
+    }
+</form>
+@if (history is null) { return; }
+<section class="panel module-panel">
+    <div class="module-head"><h2>Registered ONU Devices</h2></div>
+    @if (history.Devices.Count == 0)
+    {
+        <div class="detail-empty">No matching devices.</div>
+    }
+    else
+    {
+        <div class="table-scroll"><table class="customers-table detail-table">
+            <thead><tr><th>Customer</th><th>Serial Number</th><th>Brand / Model</th><th>NAP</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody>
+                @foreach (var device in history.Devices)
+                {
+                    <tr><td><a href="/customers/@device.CustomerId">@device.CustomerName</a></td><td>@(device.Serial ?? "—")</td>
+                        <td>@(device.Model ?? "—")</td><td>@device.Nap</td><td>@(device.Serial is null && device.Model is null ? "Unassigned" : device.Status == "Terminated" ? "Terminated" : "Assigned")</td>
+                        <td><a asp-action="Index" asp-route-customerId="@device.CustomerId" class="btn btn-outline">History</a></td></tr>
+                }
+            </tbody>
+        </table></div>
+    }
+</section>
+<section class="panel module-panel">
+    <div class="module-head">
+        <h2>Replacement Log</h2>
+        @if (Model.CustomerId is null)
+        {
+            <a class="btn btn-primary" href="/onu-history/replace">Record Replacement</a>
+        }
+        else if (history.Devices.FirstOrDefault() is { } selected && (selected.Status != "Terminated" || User.IsInRole("Manager")))
+        {
+            <a class="btn btn-primary" href="/onu-history/@selected.CustomerId/replace">Record Replacement</a>
+        }
+    </div>
+    @if (history.Replacements.Count == 0)
+    {
+        <div class="detail-empty">No matching replacement records.</div>
+    }
+    else
+    {
+        <div class="table-scroll"><table class="customers-table detail-table">
+            <thead><tr><th>Date</th><th>Customer</th><th>Old Device</th><th>New Device</th><th>Reason</th><th>Operator</th></tr></thead>
+            <tbody>
+                @foreach (var row in history.Replacements)
+                {
+                    <tr><td>@row.ReplacedOn.ToString("MMM d, yyyy")</td><td><a href="/customers/@row.CustomerId">@row.CustomerName</a></td>
+                        <td>@(row.PreviousSerial ?? "—")<br><span class="detail-secondary">@row.PreviousModel</span></td>
+                        <td>@(row.NewSerial ?? "—")<br><span class="detail-secondary">@row.NewModel</span></td>
+                        <td>@row.Reason</td><td>@row.Operator</td></tr>
+                }
+            </tbody>
+        </table></div>
+    }
+    @if (history.Page > 1 || history.HasMoreDevices || history.HasMoreReplacements)
+    {
+        <nav class="module-actions" aria-label="ONU history pages">
+            @if (history.Page > 1)
+            {
+                <a class="btn btn-outline" asp-action="Index" asp-route-page="@(history.Page - 1)" asp-route-search="@Model.Search" asp-route-customerId="@Model.CustomerId">Previous</a>
+            }
+            <span>Page @history.Page</span>
+            @if (history.HasMoreDevices || history.HasMoreReplacements)
+            {
+                <a class="btn btn-outline" asp-action="Index" asp-route-page="@(history.Page + 1)" asp-route-search="@Model.Search" asp-route-customerId="@Model.CustomerId">Next</a>
+            }
+        </nav>
+    }
+</section>

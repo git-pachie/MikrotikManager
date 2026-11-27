@@ -56,10 +56,23 @@ internal sealed class CustomerRepository(NetoraDbContext db) : ICustomerReposito
     public async Task<CustomerSaveResult> UpdateAsync(Customer customer, string expectedStamp, CustomerActivity activity,
         CancellationToken cancellationToken)
     {
-        // The UPDATE only matches if nobody saved in between: WHERE Id = @id AND ConcurrencyStamp = @expected.
-        db.Entry(customer).Property(c => c.ConcurrencyStamp).OriginalValue = expectedStamp;
+        var entry = db.Entry(customer);
+        entry.Property(c => c.ConcurrencyStamp).OriginalValue = expectedStamp;
         customer.ConcurrencyStamp = Guid.NewGuid().ToString("N");
         db.CustomerActivities.Add(activity);
+        var previousSerial = entry.Property(c => c.OnuSerial).OriginalValue;
+        var previousModel = entry.Property(c => c.OnuModel).OriginalValue;
+        if ((previousSerial is not null || previousModel is not null)
+            && (previousSerial != customer.OnuSerial || previousModel != customer.OnuModel))
+        {
+            db.OnuReplacements.Add(new OnuReplacement
+            {
+                CustomerId = customer.Id, PreviousSerial = previousSerial, PreviousModel = previousModel,
+                NewSerial = customer.OnuSerial, NewModel = customer.OnuModel,
+                ReplacedOn = DateOnly.FromDateTime(activity.OccurredAtUtc.LocalDateTime),
+                Reason = "Updated through Edit Customer", OperatorId = activity.ActorUserId, Operator = activity.ActorUserName,
+            });
+        }
         try
         {
             await db.SaveChangesAsync(cancellationToken);

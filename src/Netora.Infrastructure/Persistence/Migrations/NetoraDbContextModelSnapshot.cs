@@ -542,6 +542,60 @@ namespace Netora.Infrastructure.Persistence.Migrations
                     b.ToTable("CustomerAttachments", (string)null);
                 });
 
+            modelBuilder.Entity("Netora.Domain.Customers.OnuReplacement", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<int>("CustomerId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("NewModel")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("NewSerial")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("Operator")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("OperatorId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("PreviousModel")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("PreviousSerial")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateOnly>("ReplacedOn")
+                        .HasColumnType("date");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CustomerId", "ReplacedOn");
+
+                    b.HasIndex("ReplacedOn", "Id");
+
+                    b.ToTable("OnuReplacements");
+                });
+
             modelBuilder.Entity("Netora.Domain.Network.NapBox", b =>
                 {
                     b.Property<int>("Id")
@@ -654,6 +708,21 @@ namespace Netora.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("InternetPlans", (string)null);
+                });
+
+            modelBuilder.Entity("Netora.Domain.Security.RevokedAccessToken", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("RetainUntilUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RetainUntilUtc");
+
+                    b.ToTable("RevokedAccessTokens");
                 });
 
             modelBuilder.Entity("Netora.Domain.Security.SecurityEvent", b =>
@@ -910,6 +979,15 @@ namespace Netora.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("CustomerId")
                         .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Netora.Domain.Customers.OnuReplacement", b =>
+                {
+                    b.HasOne("Netora.Domain.Customers.Customer", null)
+                        .WithMany()
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
 #pragma warning restore 612, 618

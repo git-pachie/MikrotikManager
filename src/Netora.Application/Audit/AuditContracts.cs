@@ -50,6 +50,7 @@ public static class AuditLabels
     {
         ["CustomerCreated"] = "Added customer",
         ["CustomerUpdated"] = "Edited customer",
+        ["OnuReplaced"] = "Recorded ONU replacement",
         ["AttachmentUploaded"] = "Uploaded attachment",
         ["AttachmentDeleted"] = "Deleted attachment",
         ["PppoeUpdated"] = "Edited PPPoE details",
@@ -117,7 +118,7 @@ public static class AuditLabels
     public static readonly IReadOnlyList<string> SignInEvents =
         ["LoginSucceeded", "LoginFailed", "LockoutTriggered", "Logout", "PasswordChanged", "ProfileUpdated"];
 
-    public static readonly IReadOnlyList<string> CustomerActions = ["CustomerCreated", "CustomerUpdated", "AttachmentUploaded", "AttachmentDeleted"];
+    public static readonly IReadOnlyList<string> CustomerActions = ["CustomerCreated", "CustomerUpdated", "AttachmentUploaded", "AttachmentDeleted", "OnuReplaced"];
     public static readonly IReadOnlyList<string> PppoeActions = ["PppoeUpdated", "CustomerImported"];
     public static readonly IReadOnlyList<string> RouterActions = ["RouterProvisioned", "RouterProvisioningFailed"];
 

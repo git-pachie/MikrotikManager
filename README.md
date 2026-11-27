@@ -2,7 +2,7 @@
 
 An ISP management application for customers, PPPoE accounts and Manager approvals, built with ASP.NET Core 9 and Clean Architecture:
 
-Browser → `Netora.WebUI` (MVC) → `Netora.WebApi` → SQL Server, and later MikroTik RouterOS 7 HTTPS REST.
+Browser → `Netora.WebUI` (MVC) → `Netora.WebApi` → SQL Server and MikroTik RouterOS 7 HTTPS REST.
 
 The WebUI never touches the database or the router. It calls the Web API, which owns all business rules and permissions.
 
@@ -22,19 +22,21 @@ Specs, approved mockups and module prompts are in `Netora-MikroTik-Manager-V2-Pr
 
 | Area | Pages | Notes |
 |---|---|---|
-| Sign-in | `/login` | Manager and Staff roles, lockout after 5 failed attempts for 15 minutes, cookie session in the WebUI, JWT between WebUI and API |
+| Sign-in | `/login` | Manager and Staff roles, login rate limits, account lockout, browser cookie session, and per-token API logout revocation |
 | Customers | `/customers`, `/customers/{id}`, `/customers/new`, `/customers/{id}/edit` | Search, filters, sorting, paging, details, add/edit, attachments (JPG, PNG, PDF up to 10 MB). Manager-only customers are hidden from Staff, including in counts |
-| PPPoE | `/pppoe`, `/pppoe/{id}` | Accounts list and edit, encrypted password. Import is layout only |
+| PPPoE | `/pppoe`, `/pppoe/{id}` | Accounts, encrypted passwords, and on-demand router import |
 | Approvals | `/approvals`, `/approvals/{id}` | Create, Disable, Enable, Change Plan and Terminate requests; only Managers decide; approval emails |
-| Users and Settings | `/users`, `/settings` (Managers), `/profile` (everyone) | Add, edit, enable/disable and password reset with a temporary password; router details (password encrypted) and email settings with a test email; own name, email, theme and password |
-
+| Users and Settings | `/users`, `/settings` (Managers), `/profile` (everyone) | Add, edit, enable, disable, delete, and reset passwords. Router and email settings, profile, theme, and password |
 | MikroTik | `/settings`, `/approvals/{id}`, `/customers/{id}`, `/pppoe/import` | Approved changes sent to the router with Retry, live status and Configuration Mismatch on the customer profile, Test Connection, Import. Uses a mock router until `Router:Mode` is `RouterOS` |
 | Audit Trail | `/audit` (Managers) | Sign-ins, user and settings changes, customer and PPPoE changes, approval steps with router results, plan and NAP changes; filters by date, category, actor and text. Backups are not built yet |
 | Internet Plans | `/plans`, `/plans/new`, `/plans/{id}/edit` | Plan catalogue with fee, speeds and the MikroTik PPP profile each plan maps to; Check Router Profiles. Managers add, edit and deactivate; Staff view |
 | NAP Boxes | `/nap-boxes`, `/nap-boxes/new`, `/nap-boxes/{id}` | NAP list with customer counts, details with assigned customers, move customers between NAP boxes, UNKNOWN review. Managers add and edit; Staff view and move |
 | Logging | none (server files) | Daily text files `netora-api-yyyy-MM-dd.txt` and `netora-web-yyyy-MM-dd.txt`, see [Log files](#log-files) |
+| ONU History | `/onu-history` | Current devices and replacement history with date, reason, and operator |
+| Diagnostics | `/diagnostics` | On-demand PPPoE session, available RouterOS log events, and configuration mismatch checks |
+| Dashboard | `/dashboard` | Role-filtered subscriber totals, pending approvals, recent activity, and live router health |
 
-The other sidebar pages are not built yet.
+Reports, Backups, and Notifications remain planned.
 
 ## Prerequisites
 
@@ -313,6 +315,8 @@ dotnet test tests/Netora.Tests
 The tests use the EF Core in-memory provider, so they need no database. That provider has no unique indexes or real transactions, so those cases are checked against SQL Server separately.
 
 ## Database migrations
+
+Apply `OnuHistoryAndTokenRevocation` before starting the updated API. It adds the ONU history and access token revocation tables.
 
 ```powershell
 dotnet ef migrations add <Name> --project src/Netora.Infrastructure --startup-project src/Netora.WebApi --output-dir Persistence/Migrations

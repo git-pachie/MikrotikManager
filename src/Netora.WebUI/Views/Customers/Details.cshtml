@@ -4,7 +4,6 @@
     ViewData["Title"] = "Customer Details";
     ViewData["Nav"] = "customers";
     var d = Model.Data;
-    const string notConnected = "PPPoE session logs come with the Diagnostics module.";
     var rs = Model.Router;
     var secretText = rs is null ? "Not checked" : !rs.Reachable ? "Router not reachable" : rs.SecretFound ? rs.SecretState! : rs.SecretExpected ? "Missing on router" : "Not created yet";
     var liveText = rs is null ? "Not checked" : !rs.Reachable ? "Unknown" : rs.SessionActive ? "Online" : "Offline";
@@ -158,7 +157,7 @@
         <div class="detail-fields detail-diagnostics">
             <div><span>PPPoE Username</span><strong>@d.PppoeUsername</strong></div>
             <div><span>Secret Status</span><strong>@secretText</strong></div>
-            <div><span>Session Status</span><strong>@(rs is { Reachable: true } ? (rs.SessionActive ? $"Online{(rs.Uptime is null ? "" : $", up {rs.Uptime}")}" : "Offline") : "Unknown")</strong></div>
+            <div><span>Session Status</span><strong>@(rs is { Reachable: true, SecretFound: true } ? (rs.SessionActive ? $"Online{(rs.Uptime is null ? "" : $", up {rs.Uptime}")}" : "Offline") : "Unavailable")</strong></div>
             <div><span>Assigned IP</span><strong>@(rs?.AssignedIp ?? "—")</strong></div>
             <div><span>Profile (expected)</span><strong>@d.PlanName</strong></div>
             <div><span>Profile (router)</span><strong>@(rs?.ActualProfile ?? "—")</strong></div>
@@ -181,20 +180,23 @@
             <p class="module-note">Nothing is changed automatically on either side. Correct the record in Netora, or the router, or send the account again through an approved request.</p>
         }
         <h3 class="detail-subtitle">Recent PPPoE Logs</h3>
-        <div class="detail-empty">@notConnected</div>
+        <a class="btn btn-outline" href="/diagnostics?customerId=@d.Id">Open Diagnostics</a>
     </div>
 
     <div class="detail-tab-pane" id="pane-onu" data-pane="onu" role="tabpanel" aria-labelledby="tab-onu" hidden>
         <div class="section-head">
             <h3>ONU Information &amp; Replacement History</h3>
-            <button type="button" class="btn btn-outline" disabled title="Recording ONU replacements is available with the ONU module">Record Replacement</button>
+            @if (d.IsEditable)
+            {
+                <a class="btn btn-outline" href="/onu-history/@d.Id/replace">Record Replacement</a>
+            }
         </div>
         <div class="detail-fields detail-diagnostics">
             <div><span>Serial Number</span><strong>@(string.IsNullOrWhiteSpace(d.OnuSerial) ? "Not recorded" : d.OnuSerial)</strong></div>
             <div><span>Brand / Model</span><strong>@(string.IsNullOrWhiteSpace(d.OnuModel) ? "Not recorded" : d.OnuModel)</strong></div>
         </div>
         <h3 class="detail-subtitle">Replacement History</h3>
-        <div class="detail-empty">No ONU replacements recorded. Replacement history is kept by the ONU module.</div>
+        <a class="btn btn-outline" href="/onu-history?customerId=@d.Id">View Replacement History</a>
     </div>
 
     <div class="detail-tab-pane" id="pane-attachments" data-pane="attachments" role="tabpanel" aria-labelledby="tab-attachments" hidden>

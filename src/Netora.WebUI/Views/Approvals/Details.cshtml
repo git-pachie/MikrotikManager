@@ -118,6 +118,10 @@
         {
             <p class="module-note">Waiting for a Manager to retry sending this change to the router.</p>
         }
+        else if (d.ProvisioningStatus == "Superseded")
+        {
+            <p class="module-note">A later account change superseded this request.</p>
+        }
         else
         {
             <p class="module-note">The router has this change. It will not be sent again.</p>

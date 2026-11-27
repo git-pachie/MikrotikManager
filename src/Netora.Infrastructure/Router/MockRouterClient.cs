@@ -30,6 +30,9 @@ internal sealed class MockRouterClient(
     public Task<RouterIdentity> GetIdentityAsync(CancellationToken cancellationToken)
         => Task.FromResult(new RouterIdentity("Mock MikroTik", "7.16 (mock)", "Mock router, no real device"));
 
+    public Task<IReadOnlyList<RouterPppoeLog>> ReadPppoeLogsAsync(string name, CancellationToken cancellationToken)
+        => Task.FromResult<IReadOnlyList<RouterPppoeLog>>([]);
+
     public Task<IReadOnlyList<RouterSecret>> ListSecretsAsync(CancellationToken cancellationToken)
         => WithStateAsync<IReadOnlyList<RouterSecret>>(s => s.Secrets.Select(ToSecret).ToList(), save: false, cancellationToken);
 

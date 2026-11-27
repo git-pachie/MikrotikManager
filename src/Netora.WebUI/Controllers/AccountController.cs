@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Netora.Application.Auth;
 using Netora.Application.Logging;
 using Netora.WebUI.Infrastructure;
@@ -25,6 +26,7 @@ public sealed class AccountController(INetoraApiClient apiClient, ILogger<Accoun
 
     [AllowAnonymous]
     [HttpPost("/login")]
+    [EnableRateLimiting("login")]
     public async Task<IActionResult> Login(LoginViewModel model, CancellationToken cancellationToken)
     {
         if (!ModelState.IsValid)
@@ -49,6 +51,7 @@ public sealed class AccountController(INetoraApiClient apiClient, ILogger<Accoun
             {
                 "invalid_credentials" => "Invalid user name or password.",
                 "locked_out" => "This account is temporarily locked. Try again later.",
+                "login_rate_limited" => "Too many sign-in attempts. Wait a minute and try again.",
                 "validation_failed" => "Enter your user name and password.",
                 _ => "Sign-in is unavailable right now. Try again in a moment.",
             });
@@ -82,5 +85,5 @@ public sealed class AccountController(INetoraApiClient apiClient, ILogger<Accoun
     public IActionResult AccessDenied() => View();
 
     private string SafeReturnUrl(string? returnUrl)
-        => !string.IsNullOrEmpty(returnUrl) && Url.IsLocalUrl(returnUrl) ? returnUrl : "/customers";
+        => !string.IsNullOrEmpty(returnUrl) && Url.IsLocalUrl(returnUrl) ? returnUrl : "/dashboard";
 }

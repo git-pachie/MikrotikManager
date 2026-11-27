@@ -57,6 +57,7 @@ public static class DependencyInjection
         services.AddScoped<IJwtTokenService, JwtTokenService>();
         services.AddScoped<ISecurityEventWriter, SecurityEventWriter>();
         services.AddScoped<IAuthService, AuthService>();
+        services.AddScoped<AccessTokenRevocations>();
         services.AddScoped<Netora.Application.Customers.ICustomerQueries, Customers.CustomerQueries>();
         services.AddScoped<Netora.Application.Customers.ICustomerRepository, Customers.CustomerRepository>();
 
@@ -84,6 +85,8 @@ public static class DependencyInjection
         services.AddScoped<Netora.Application.Catalog.IPlanService, Catalog.PlanService>();
         services.AddScoped<Netora.Application.Catalog.INapService, Catalog.NapService>();
         services.AddScoped<Netora.Application.Audit.IAuditQueries, Audit.AuditQueries>();
+        services.AddScoped<Netora.Application.Operations.IOnuService, Operations.OnuService>();
+        services.AddScoped<Netora.Application.Operations.IDashboardQueries, Operations.DashboardQueries>();
 
         // Router (module 09). Router:Mode must be set explicitly, so mock results can never pass for a real router.
         var routerMode = configuration[$"{Router.RouterOptions.SectionName}:Mode"];

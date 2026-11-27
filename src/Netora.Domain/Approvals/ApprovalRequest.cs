@@ -28,7 +28,6 @@ public enum ApprovalStatus
 
 /// <summary>
 /// Router outcome of an approved request, kept apart from the approval decision (08.04).
-/// Nothing is sent until the MikroTik module (09) exists, so approved requests stay <see cref="NotSent"/>.
 /// </summary>
 public enum ProvisioningStatus
 {
@@ -37,6 +36,7 @@ public enum ProvisioningStatus
     NotSent = 1,
     Succeeded = 2,
     Failed = 3,
+    Superseded = 4,
 }
 
 /// <summary>

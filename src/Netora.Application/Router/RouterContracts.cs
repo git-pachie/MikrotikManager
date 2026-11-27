@@ -24,12 +24,17 @@ public sealed record RouterSecretWrite(
 
 public sealed record RouterActiveSession(string Name, string? Address, string? Uptime, string? CallerId);
 
+public sealed record RouterPppoeLog(string? RouterTime, string Event);
+
+public sealed record PppoeDiagnosticsDto(RouterStatusDto Status, IReadOnlyList<RouterPppoeLog>? Logs, string? LogError);
+
 public sealed record RouterIdentity(string Identity, string? Version, string? Board);
 
 public enum RouterErrorKind
 {
     NotConfigured,
     Unreachable,
+    Timeout,
     Unauthorized,
     Certificate,
     Rejected,
@@ -63,6 +68,8 @@ public interface IRouterClient
     Task<RouterSecret> UpdateSecretAsync(string id, RouterSecretWrite secret, CancellationToken cancellationToken);
 
     Task<RouterActiveSession?> FindActiveSessionAsync(string name, CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<RouterPppoeLog>> ReadPppoeLogsAsync(string name, CancellationToken cancellationToken);
 
     /// <summary>The router's PPP profiles (/ppp/profile).</summary>
     Task<IReadOnlyList<RouterPppProfile>> ListProfilesAsync(CancellationToken cancellationToken);
@@ -112,6 +119,7 @@ public interface IRouterStatusService
 {
     /// <summary>Null when the customer does not exist or is hidden from the viewer.</summary>
     Task<RouterStatusDto?> CheckAsync(int customerId, bool viewerIsManager, CancellationToken cancellationToken);
+    Task<PppoeDiagnosticsDto?> DiagnoseAsync(int customerId, bool viewerIsManager, bool includeLogs, CancellationToken cancellationToken);
 }
 
 public sealed record ImportCandidateDto(string Name, string? Profile, bool Disabled, string? Comment, string State, string? Reason, int? CustomerId);

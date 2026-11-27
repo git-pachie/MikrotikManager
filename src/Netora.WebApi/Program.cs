@@ -1,4 +1,7 @@
+using System.Globalization;
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.DataProtection;
+using Netora.Application.Common;
 using Microsoft.OpenApi.Models;
 using Netora.Application;
 using Netora.Infrastructure;
@@ -33,6 +36,20 @@ builder.Services.AddDataProtection()
     .SetApplicationName("Netora")
     .PersistKeysToFileSystem(new DirectoryInfo(Path.IsPathRooted(keysPath) ? keysPath : Path.Combine(builder.Environment.ContentRootPath, keysPath)));
 builder.Services.AddNetoraAuthentication();
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("login", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = 120, Window = TimeSpan.FromMinutes(1) }));
+    options.OnRejected = async (context, cancellationToken) =>
+    {
+        if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retry))
+            context.HttpContext.Response.Headers.RetryAfter = Math.Ceiling(retry.TotalSeconds).ToString(CultureInfo.InvariantCulture);
+        await context.HttpContext.Response.WriteAsJsonAsync(ApiResponse<object>.Fail("login_rate_limited",
+            "Too many sign-in attempts. Wait a minute and try again.", context.HttpContext.TraceIdentifier), cancellationToken);
+    };
+});
 
 // FluentValidation in Application owns field rules, so MVC must not add implicit [Required] on non-nullable strings.
 builder.Services.AddControllers(o =>
@@ -93,6 +110,8 @@ if (!app.Environment.IsDevelopment())
     app.UseHttpsRedirection();
 }
 
+app.UseRouting();
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseMiddleware<PasswordChangeRequiredMiddleware>();
 app.UseAuthorization();

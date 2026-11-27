@@ -1,0 +1,50 @@
+@model Netora.Application.Customers.CustomerListDto?
+@{
+    ViewData["Title"] = "Select Customer";
+    ViewData["Nav"] = "onu";
+}
+<div class="detail-breadcrumb"><a href="/onu-history">ONU History</a><span> / </span><strong>Select Customer</strong></div>
+<div class="heading"><div class="heading-title"><svg class="icon"><use href="#calendar" /></svg><div><h1>Select Customer</h1><p>Choose a customer to record an ONU replacement.</p></div></div></div>
+<form method="get" action="/onu-history/replace" class="panel filters approval-filter onu-filter">
+    <div class="field"><label for="search">Search customers</label><input id="search" name="search" value="@ViewData["Search"]" maxlength="100"></div>
+    <button class="btn btn-primary" type="submit">Search</button>
+</form>
+@if (Model is null)
+{
+    <div class="form-alert" role="alert">@ViewData["Error"]</div>
+    return;
+}
+<section class="panel module-panel">
+    @if (Model.Items.Count == 0)
+    {
+        <div class="detail-empty">No matching customers.</div>
+    }
+    else
+    {
+        <div class="table-scroll"><table class="customers-table detail-table">
+            <thead><tr><th>Customer</th><th>PPPoE Username</th><th>Actions</th></tr></thead>
+            <tbody>
+                @foreach (var customer in Model.Items)
+                {
+                    <tr><td>@customer.Name</td><td>@customer.PppoeUsername</td><td>
+                        @if (customer.Status != "Terminated" || User.IsInRole("Manager"))
+                        {
+                            <a class="btn btn-outline" href="/onu-history/@customer.Id/replace">Select</a>
+                        }
+                        else { <span>Read-only</span> }
+                    </td></tr>
+                }
+            </tbody>
+        </table></div>
+    }
+    <nav class="module-actions" aria-label="Customer pages">
+        @if (Model.Page > 1)
+        {
+            <a class="btn btn-outline" asp-action="Select" asp-route-page="@(Model.Page - 1)" asp-route-search="@ViewData["Search"]">Previous</a>
+        }
+        @if ((long)Model.Page * Model.PageSize < Model.TotalMatching)
+        {
+            <a class="btn btn-outline" asp-action="Select" asp-route-page="@(Model.Page + 1)" asp-route-search="@ViewData["Search"]">Next</a>
+        }
+    </nav>
+</section>

@@ -1,0 +1,75 @@
+@using Netora.Application.Audit
+@model Netora.Application.Operations.DashboardDto?
+@{
+    ViewData["Title"] = "Dashboard";
+    ViewData["Nav"] = "dashboard";
+}
+<div class="heading">
+    <div class="heading-title">
+        <svg class="icon"><use href="#home" /></svg>
+        <div><h1>Dashboard</h1><p>Network overview, subscriber operations, and service requests.</p></div>
+    </div>
+    <div class="heading-actions"><a class="btn btn-outline" href="/customers">Customers</a></div>
+</div>
+@if (Model is null)
+{
+    <div class="form-alert" role="alert">Dashboard data is unavailable. Reload to try again.</div>
+    return;
+}
+<section class="stats dashboard-stats" aria-label="Service overview">
+    <article class="stat" style="--stat-color:#087af7;--stat-tint:#e5f0ff">
+        <div class="stat-icon"><svg class="icon"><use href="#users" /></svg></div>
+        <div><div class="stat-label">Total Customers</div><div class="stat-value">@Model.Total</div><span>Netora records</span></div>
+    </article>
+    <article class="stat" style="--stat-color:#008349;--stat-tint:#e1f7e8">
+        <div class="stat-icon"><svg class="icon"><use href="#wifi" /></svg></div>
+        <div><div class="stat-label">Active Services</div><div class="stat-value">@Model.Active</div><span>Netora account status</span></div>
+    </article>
+    <article class="stat" style="--stat-color:#a35a00;--stat-tint:#fff1ce">
+        <div class="stat-icon"><svg class="icon"><use href="#clipboard" /></svg></div>
+        <div><div class="stat-label">Pending Approvals</div><div class="stat-value">@Model.PendingRequests</div><span>Manager review needed</span></div>
+    </article>
+    <article class="stat" style="--stat-color:#6845b3;--stat-tint:#eee8fc">
+        <div class="stat-icon"><svg class="icon"><use href="#pulse" /></svg></div>
+        <div>
+            <div class="stat-label">Router Health</div>
+            <div class="stat-value">@(Model.Router.Mode == "Mock" ? "Mock" : Model.Router.Reachable ? "Online" : "Unavailable")</div>
+            <span>Checked @CustomerDetailViewModel.DateTime(Model.Router.CheckedAtUtc)</span>
+        </div>
+    </article>
+</section>
+<section class="panel module-panel">
+    <div class="module-head"><h2>Recent Activities</h2></div>
+    @if (Model.RecentActivity.Count == 0)
+    {
+        <div class="detail-empty">No recent activities.</div>
+    }
+    else
+    {
+        <div class="table-scroll">
+            <table class="customers-table detail-table">
+                <thead><tr><th>Time</th><th>Activity</th><th>Customer</th><th>Status</th></tr></thead>
+                <tbody>
+                    @foreach (var item in Model.RecentActivity)
+                    {
+                        <tr><td>@CustomerDetailViewModel.DateTime(item.OccurredAtUtc)</td><td>@AuditLabels.Action(item.Action)</td>
+                            <td><a href="/customers/@item.CustomerId">@item.CustomerName</a></td><td>@item.Outcome</td></tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+    <p class="module-note">@Model.Disabled disabled, @Model.Terminated terminated, and @Model.PendingApproval awaiting account creation in Netora.</p>
+</section>
+<section class="panel module-panel">
+    <div class="module-head"><h2>Quick Actions</h2></div>
+    <div class="module-actions">
+        <a class="btn btn-primary" href="/customers/new">Add Customer</a>
+        @if (User.IsInRole("Manager"))
+        {
+            <a class="btn btn-outline" href="/pppoe/import">Import PPPoE</a>
+        }
+        <a class="btn btn-outline" href="/approvals">@(User.IsInRole("Manager") ? "Review Approvals" : "View Approvals")</a>
+        <a class="btn btn-outline" href="/diagnostics">Run Diagnostics</a>
+    </div>
+</section>

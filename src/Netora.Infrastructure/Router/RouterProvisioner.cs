@@ -37,10 +37,21 @@ internal sealed class RouterProvisioner(
             db.ChangeTracker.Clear();
             var request = await db.ApprovalRequests.FirstOrDefaultAsync(r => r.Id == requestId, cancellationToken);
             if (request is null) return new ProvisioningResult(nameof(ProvisioningStatus.NotApplicable), "Request not found.", 0);
-            if (request.Status != ApprovalStatus.Approved || request.ProvisioningStatus == ProvisioningStatus.Succeeded)
+            if (request.Status != ApprovalStatus.Approved
+                || request.ProvisioningStatus is not (ProvisioningStatus.NotSent or ProvisioningStatus.Failed))
                 return new ProvisioningResult(request.ProvisioningStatus.ToString(), request.ProvisioningError, request.ProvisioningAttempts);
 
             var customer = await db.Customers.Include(c => c.Plan).FirstAsync(c => c.Id == request.CustomerId, cancellationToken);
+            var superseded = request.Operation == ApprovalOperation.CreatePppoe && customer.Status == CustomerStatus.Terminated
+                || await db.ApprovalRequests.AnyAsync(r => r.CustomerId == customer.Id && r.Id > request.Id
+                    && r.Status == ApprovalStatus.Approved && r.ProvisioningStatus == ProvisioningStatus.Succeeded, cancellationToken);
+            if (superseded)
+            {
+                request.ProvisioningStatus = ProvisioningStatus.Superseded;
+                request.ProvisioningError = null;
+                await db.SaveChangesAsync(cancellationToken);
+                return new ProvisioningResult(nameof(ProvisioningStatus.Superseded), null, request.ProvisioningAttempts);
+            }
             var now = DateTimeOffset.UtcNow;
             string? error = null;
             string? errorKind = null;
@@ -98,7 +109,7 @@ internal sealed class RouterProvisioner(
         var desired = new RouterSecretWrite(
             customer.PppoeUsername,
             customer.PppoePasswordProtected is null ? null : passwords.Unprotect(customer.PppoePasswordProtected),
-            // The plan's mapped PPP profile (module 05). Netora never creates profiles; a missing one fails on the router.
+            // The account uses the plan's mapped PPP profile. Provisioning expects that profile to exist already.
             customer.Plan.RouterProfile,
             Disabled: customer.Status is CustomerStatus.Disabled or CustomerStatus.Terminated,
             RouterRules.Comment(customer.Id, customer.PppoeComment),

@@ -1,0 +1,36 @@
+@model ReplaceOnuViewModel
+@{
+    ViewData["Title"] = "Record ONU Replacement";
+    ViewData["Nav"] = "onu";
+}
+<div class="detail-breadcrumb"><a href="/onu-history">ONU History</a><span> / </span><strong>Record Replacement</strong></div>
+<div class="heading"><div class="heading-title"><svg class="icon"><use href="#calendar" /></svg><div>
+    <h1>Record ONU Replacement</h1>
+    @if (Model.Customer is { } account) { <p>@account.FirstName @account.LastName</p> }
+</div></div></div>
+@if (TempData[Netora.WebUI.Controllers.CustomersController.ErrorKey] is string error)
+{
+    <div class="form-alert" role="alert">@error</div>
+}
+@if (Model.Customer is not { } customer || !customer.IsEditable)
+{
+    <div class="form-alert" role="alert">@(Model.Customer is null ? "Customer details are unavailable." : "This customer is read-only.")</div>
+    return;
+}
+<form asp-action="Replace" asp-route-id="@customer.Id" method="post" class="panel module-panel">
+    <input asp-for="ConcurrencyStamp" type="hidden">
+    <div asp-validation-summary="ModelOnly" class="field-error" role="alert"></div>
+    <div class="module-head"><h2>Current Device</h2></div>
+    <p>@(customer.OnuSerial ?? "No serial recorded") @(customer.OnuModel is null ? "" : " · " + customer.OnuModel)</p>
+    <div class="module-head"><h2>Replacement Device</h2></div>
+    <div class="module-fields">
+        <label>Serial Number <input asp-for="Serial" required maxlength="50"><span asp-validation-for="Serial" class="field-error"></span></label>
+        <label>Brand / Model <input asp-for="DeviceModel" required maxlength="100"><span asp-validation-for="DeviceModel" class="field-error"></span></label>
+        <label>Replacement Date <input asp-for="ReplacedOn" type="date" required><span asp-validation-for="ReplacedOn" class="field-error"></span></label>
+        <label>Reason <input asp-for="Reason" required maxlength="500"><span asp-validation-for="Reason" class="field-error"></span></label>
+    </div>
+    <div class="module-actions">
+        <button type="submit" class="btn btn-primary">Record Replacement</button>
+        <a class="btn btn-outline" href="/onu-history?customerId=@customer.Id">Cancel</a>
+    </div>
+</form>

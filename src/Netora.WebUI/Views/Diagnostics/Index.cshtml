@@ -1,0 +1,112 @@
+@model DiagnosticViewModel
+@{
+    ViewData["Title"] = "Diagnostics";
+    ViewData["Nav"] = "diagnostics";
+    var result = Model.Result;
+}
+<div class="heading">
+    <div class="heading-title"><svg class="icon"><use href="#pulse" /></svg>
+        <div><h1>Diagnostics</h1><p>Run customer-specific PPPoE diagnostics and on-demand configuration checks.</p></div>
+    </div>
+    <div class="heading-actions"><a class="btn btn-outline" href="/customers">Customers</a></div>
+</div>
+@if (Model.Error is not null)
+{
+    <div class="form-alert" role="alert">@Model.Error</div>
+}
+<section class="panel module-panel">
+    <div class="module-head"><h2>Customer Diagnostics</h2></div>
+    <form action="/diagnostics" method="get" class="module-fields">
+        <label>Search Customers <input name="search" value="@Model.Search" maxlength="100"></label>
+        <div class="module-actions"><button class="btn btn-outline" type="submit">Find Customers</button></div>
+    </form>
+    <form action="/diagnostics" method="get">
+        <input type="hidden" name="search" value="@Model.Search">
+        <input type="hidden" name="page" value="@Model.Page">
+        <div class="module-fields">
+            <label>Customer
+                <select name="customerId" required>
+                    <option value="">Select a customer</option>
+                    @if (Model.Selected is { } chosen && Model.Customers?.Items.Any(c => c.Id == chosen.Id) != true)
+                    {
+                        <option value="@chosen.Id" selected>@chosen.FirstName @chosen.LastName (@chosen.PppoeUsername)</option>
+                    }
+                    @foreach (var customer in Model.Customers?.Items ?? [])
+                    {
+                        <option value="@customer.Id" selected="@(customer.Id == Model.Selected?.Id)">@customer.Name (@customer.PppoeUsername)</option>
+                    }
+                </select>
+            </label>
+            <label>Diagnostic Type
+                <select name="check">
+                    <option value="session" selected="@(Model.Check == "session")">PPPoE session and logs</option>
+                    <option value="mismatch" selected="@(Model.Check == "mismatch")">SQL versus MikroTik configuration mismatch</option>
+                </select>
+            </label>
+        </div>
+        <div class="module-actions"><button class="btn btn-primary" type="submit">Run Diagnostics</button></div>
+    </form>
+    @if (Model.Customers is { } list)
+    {
+        <nav class="module-actions" aria-label="Customer pages">
+            @if (list.Page > 1)
+            {
+                <a class="btn btn-outline" asp-action="Index" asp-route-page="@(list.Page - 1)" asp-route-search="@Model.Search">Previous Customers</a>
+            }
+            @if ((long)list.Page * list.PageSize < list.TotalMatching)
+            {
+                <a class="btn btn-outline" asp-action="Index" asp-route-page="@(list.Page + 1)" asp-route-search="@Model.Search">Next Customers</a>
+            }
+        </nav>
+    }
+</section>
+@if (result is null) { return; }
+<section class="panel module-panel">
+    <div class="module-head"><h2>Diagnostic Results</h2></div>
+    <p class="module-note">Checked @CustomerDetailViewModel.DateTime(result.Status.CheckedAtUtc) · @(result.Status.Mode == "Mock" ? "Mock router" : "MikroTik")</p>
+    @if (!result.Status.Reachable)
+    {
+        <div class="form-alert" role="alert">@result.Status.Error Live session data is unavailable.</div>
+    }
+    else if (Model.Check == "mismatch")
+    {
+        @if (result.Status.Mismatches.Count == 0)
+        {
+            <div class="detail-empty">No configuration differences found.</div>
+        }
+        else
+        {
+            <div class="table-scroll"><table class="customers-table detail-table">
+                <thead><tr><th>Setting</th><th>Netora (SQL Server)</th><th>Router</th></tr></thead>
+                <tbody>
+                    @foreach (var item in result.Status.Mismatches)
+                    {
+                        <tr><td>@item.Field</td><td>@item.Expected</td><td>@item.Actual</td></tr>
+                    }
+                </tbody>
+            </table></div>
+        }
+    }
+    else
+    {
+        <div class="detail-fields detail-diagnostics">
+            <div><span>PPPoE Secret</span><strong>@(result.Status.SecretState ?? (result.Status.SecretExpected ? "Missing on router" : "Awaiting creation"))</strong></div>
+            <div><span>Active Session</span><strong>@(result.Status.SessionActive ? "Connected" : result.Status.SecretFound ? "Offline" : "Unavailable")</strong></div>
+            <div><span>Assigned IP</span><strong>@(result.Status.AssignedIp ?? "—")</strong></div>
+            <div><span>Uptime</span><strong>@(result.Status.Uptime ?? "—")</strong></div>
+            <div><span>Authentication Failures in Shown Logs</span><strong>@(result.Logs?.Count(log => log.Event == "Authentication failed").ToString() ?? "Unavailable")</strong></div>
+        </div>
+        <h3 class="detail-subtitle">Recent PPPoE Logs</h3>
+        @if (result.Logs is { Count: > 0 } logs)
+        {
+            <div class="table-scroll"><table class="customers-table detail-table">
+                <thead><tr><th>Router Time</th><th>Event</th></tr></thead>
+                <tbody>@foreach (var item in logs) { <tr><td>@(item.RouterTime ?? "—")</td><td>@item.Event</td></tr> }</tbody>
+            </table></div>
+        }
+        else
+        {
+            <div class="detail-empty">@(result.LogError ?? "No matching events in the router’s available logs.")</div>
+        }
+    }
+</section>

@@ -139,7 +139,7 @@
                                 {
                                     <a class="action-btn primary" href="/customers/@c.Id/edit" title="Edit customer" aria-label="Edit @c.Name"><svg class="icon"><use href="#edit" /></svg></a>
                                 }
-                                <button type="button" class="action-btn" disabled title="Diagnostics: @later.ToLowerInvariant()" aria-label="Diagnostics for @c.PppoeUsername"><svg class="icon"><use href="#pulse" /></svg></button>
+                                <a class="action-btn" href="/diagnostics?customerId=@c.Id" title="Diagnostics" aria-label="Diagnostics for @c.PppoeUsername"><svg class="icon"><use href="#pulse" /></svg></a>
                                 <button type="button" class="action-btn" disabled title="More actions: @later.ToLowerInvariant()" aria-label="More actions for @c.Name"><svg class="icon"><use href="#more" /></svg></button>
                             </div>
                         </td>

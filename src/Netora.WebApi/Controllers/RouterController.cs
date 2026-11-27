@@ -14,6 +14,16 @@ namespace Netora.WebApi.Controllers;
 [ApiController]
 public sealed class RouterController(IRouterStatusService status, IPppoeImportService import) : ControllerBase
 {
+    [HttpGet("api/v1/customers/{customerId:int}/diagnostics")]
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+    public async Task<IActionResult> Diagnostics(int customerId, bool includeLogs = true, CancellationToken cancellationToken = default)
+    {
+        var result = await status.DiagnoseAsync(customerId, User.IsInRole(Roles.Manager), includeLogs, cancellationToken);
+        return result is null
+            ? NotFound(ApiResponse<PppoeDiagnosticsDto>.Fail("not_found", "Customer not found.", HttpContext.TraceIdentifier))
+            : Ok(ApiResponse<PppoeDiagnosticsDto>.Ok(result, HttpContext.TraceIdentifier));
+    }
+
     /// <summary>Checks the router now and compares it with SQL Server. 404 for missing and hidden customers alike.</summary>
     [HttpGet("api/v1/customers/{customerId:int}/router-status")]
     [ProducesResponseType(typeof(ApiResponse<RouterStatusDto>), StatusCodes.Status200OK)]

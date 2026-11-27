@@ -127,7 +127,7 @@ internal sealed class ActivityLogInterceptor(IActivityLog activity) : SaveChange
             // Detail is "Changed: <field names>" only (never values), see CustomerCommands and PppoeCommands.
             "CustomerUpdated" => new(ActivityCategories.Customers, a.Action, outcome, target, a.Detail, Actor: a.ActorUserName),
             "PppoeUpdated" => new(ActivityCategories.Pppoe, a.Action, outcome, target, a.Detail, Actor: a.ActorUserName),
-            "CustomerCreated" or "AttachmentUploaded" or "AttachmentDeleted"
+            "CustomerCreated" or "AttachmentUploaded" or "AttachmentDeleted" or "OnuReplaced"
                 => new(ActivityCategories.Customers, a.Action, outcome, target, Actor: a.ActorUserName),
             "CustomerImported" => new(ActivityCategories.Pppoe, a.Action, outcome, target, Actor: a.ActorUserName),
             // Approval steps come from the ApprovalRequest rows; router results from RouterProvisioner.

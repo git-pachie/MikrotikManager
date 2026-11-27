@@ -12,8 +12,10 @@ public sealed class NetoraDbContext(DbContextOptions<NetoraDbContext> options)
     : IdentityDbContext<ApplicationUser>(options)
 {
     public DbSet<SecurityEvent> SecurityEvents => Set<SecurityEvent>();
+    public DbSet<RevokedAccessToken> RevokedAccessTokens => Set<RevokedAccessToken>();
     public DbSet<Customer> Customers => Set<Customer>();
     public DbSet<CustomerActivity> CustomerActivities => Set<CustomerActivity>();
+    public DbSet<OnuReplacement> OnuReplacements => Set<OnuReplacement>();
     public DbSet<CustomerAttachment> CustomerAttachments => Set<CustomerAttachment>();
     public DbSet<ApprovalRequest> ApprovalRequests => Set<ApprovalRequest>();
     public DbSet<AppSetting> AppSettings => Set<AppSetting>();
@@ -25,6 +27,8 @@ public sealed class NetoraDbContext(DbContextOptions<NetoraDbContext> options)
     {
         base.OnModelCreating(modelBuilder);
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(NetoraDbContext).Assembly);
+        modelBuilder.Entity<RevokedAccessToken>().HasIndex(token => token.RetainUntilUtc);
+        modelBuilder.Entity<RevokedAccessToken>().Property(token => token.Id).ValueGeneratedNever();
 
         modelBuilder.Entity<ApplicationUser>(b =>
         {

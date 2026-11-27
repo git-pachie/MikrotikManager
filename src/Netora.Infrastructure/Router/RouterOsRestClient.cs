@@ -73,6 +73,39 @@ internal sealed partial class RouterOsRestClient(
             : null;
     }
 
+    public async Task<IReadOnlyList<RouterPppoeLog>> ReadPppoeLogsAsync(string name, CancellationToken cancellationToken)
+    {
+        var rows = await SendAsync(HttpMethod.Get, "log?.proplist=time,topics,message", null, cancellationToken);
+        if (rows.ValueKind != JsonValueKind.Array)
+            throw new RouterException(RouterErrorKind.Rejected, "The router returned an unexpected log response.");
+
+        return rows.EnumerateArray().Select(row => ParsePppoeLog(name, Str(row, "topics"),
+                Str(row, "message"), Str(row, "time")))
+            .OfType<RouterPppoeLog>().TakeLast(25).Reverse().ToList();
+    }
+
+    // Attribute known message formats to the exact username. Return event labels only, never free-form log text.
+    internal static RouterPppoeLog? ParsePppoeLog(string name, string? topics, string? message, string? time)
+    {
+        var kinds = topics?.Split(',', StringSplitOptions.TrimEntries);
+        if (kinds is null || (!kinds.Contains("ppp") && !kinds.Contains("pppoe")) || message is null) return null;
+
+        var prefix = $"<pppoe-{name}>: ";
+        var eventName = message.StartsWith(prefix, StringComparison.Ordinal) ? message[prefix.Length..] switch
+        {
+            "authenticated" => "Authenticated",
+            "connected" => "Connected",
+            "disconnected" => "Disconnected",
+            "authentication failed" => "Authentication failed",
+            _ => null,
+        } : message == $"user {name} authentication failed" ? "Authentication failed" : null;
+        if (eventName is null) return null;
+        var displayTime = time is { Length: > 0 and <= 32 }
+            && time.All(c => char.IsAsciiDigit(c) || c is '-' or ':' or '.' or ' ' or '+' or 'T' or 'Z')
+            ? time : null;
+        return new(displayTime, eventName);
+    }
+
     public async Task<IReadOnlyList<RouterPppProfile>> ListProfilesAsync(CancellationToken cancellationToken)
     {
         var list = await SendAsync(HttpMethod.Get, "ppp/profile", null, cancellationToken);
@@ -154,14 +187,25 @@ internal sealed partial class RouterOsRestClient(
         }
         catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
-            throw new RouterException(RouterErrorKind.Unreachable, $"The router at {c.Address}:{c.Port} did not answer in time.", ex);
+            throw new RouterException(RouterErrorKind.Timeout, $"The router at {c.Address}:{c.Port} did not answer in time.", ex);
         }
 
         using (response)
         {
             var text = await response.Content.ReadAsStringAsync(cancellationToken);
             if (response.IsSuccessStatusCode)
-                return string.IsNullOrWhiteSpace(text) ? default : JsonDocument.Parse(text).RootElement.Clone();
+            {
+                if (string.IsNullOrWhiteSpace(text)) return default;
+                try
+                {
+                    using var json = JsonDocument.Parse(text);
+                    return json.RootElement.Clone();
+                }
+                catch (JsonException ex)
+                {
+                    throw new RouterException(RouterErrorKind.Rejected, "The router returned invalid JSON.", ex);
+                }
+            }
 
             var detail = ErrorDetail(text);
             logger.LogWarning("RouterCallFailed Method={Method} Path={Path} Status={Status} Detail={Detail}",

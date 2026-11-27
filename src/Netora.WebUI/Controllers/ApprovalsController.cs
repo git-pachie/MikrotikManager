@@ -54,6 +54,7 @@ public class ApprovalsController(INetoraApiClient apiClient) : Controller
                 ? r.ProvisioningStatus switch
                 {
                     "Succeeded" => $"{ApprovalRequestId(r.Id)} approved and sent to the router.",
+                    "Superseded" => $"{ApprovalRequestId(r.Id)} was superseded by a later account change.",
                     "Failed" => $"{ApprovalRequestId(r.Id)} approved and saved, but the router change failed. See Router below and use Retry.",
                     _ => $"{ApprovalRequestId(r.Id)} approved. The change is saved; it is not sent to the router yet.",
                 }
@@ -74,6 +75,7 @@ public class ApprovalsController(INetoraApiClient apiClient) : Controller
         if (result.Success && result.Data is { } r)
         {
             if (r.Status == "Succeeded") TempData[CustomersController.ToastKey] = $"{ApprovalRequestId(id)} sent to the router (attempt {r.Attempts}).";
+            else if (r.Status == "Superseded") TempData[CustomersController.ToastKey] = $"{ApprovalRequestId(id)} was superseded by a later account change.";
             else TempData[CustomersController.ErrorKey] = $"{ApprovalRequestId(id)} failed on the router again (attempt {r.Attempts}): {r.Error}";
         }
         else

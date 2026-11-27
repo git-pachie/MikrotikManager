@@ -6,7 +6,7 @@ namespace Netora.WebUI.Controllers;
 public class HomeController : Controller
 {
     [HttpGet("/")]
-    public IActionResult Index() => Redirect("/customers");
+    public IActionResult Index() => Redirect("/dashboard");
 
     [AllowAnonymous]
     [HttpGet("/error")]

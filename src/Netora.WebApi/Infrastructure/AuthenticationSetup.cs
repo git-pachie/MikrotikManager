@@ -1,3 +1,4 @@
+using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -12,6 +13,8 @@ namespace Netora.WebApi.Infrastructure;
 
 public static class AuthenticationSetup
 {
+    internal static readonly TimeSpan TokenClockSkew = TimeSpan.FromSeconds(30);
+
     public static IServiceCollection AddNetoraAuthentication(this IServiceCollection services)
     {
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer();
@@ -31,7 +34,7 @@ public static class AuthenticationSetup
                     ValidateIssuerSigningKey = true,
                     IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt.SigningKey)),
                     ValidateLifetime = true,
-                    ClockSkew = TimeSpan.FromSeconds(30),
+                    ClockSkew = TokenClockSkew,
                     NameClaimType = NetoraClaimTypes.Name,
                     RoleClaimType = NetoraClaimTypes.Role,
                 };
@@ -57,7 +60,8 @@ public static class AuthenticationSetup
         var principal = context.Principal;
         var userId = principal?.FindFirstValue(NetoraClaimTypes.Subject);
         var tokenStamp = principal?.FindFirstValue(NetoraClaimTypes.SecurityStamp);
-        if (principal?.Identity is not ClaimsIdentity identity || string.IsNullOrEmpty(userId))
+        if (principal?.Identity is not ClaimsIdentity identity || string.IsNullOrEmpty(userId)
+            || !Guid.TryParseExact(principal.FindFirstValue(JwtRegisteredClaimNames.Jti), "N", out var tokenId))
         {
             context.Fail("Invalid token.");
             return;
@@ -73,6 +77,12 @@ public static class AuthenticationSetup
         }
 
         var roles = (await userManager.GetRolesAsync(user)).Where(r => Roles.All.Contains(r)).ToList();
+        var revocations = context.HttpContext.RequestServices.GetRequiredService<AccessTokenRevocations>();
+        if (roles.Count == 0 || await revocations.ContainsAsync(tokenId, context.HttpContext.RequestAborted))
+        {
+            context.Fail("The session is no longer valid.");
+            return;
+        }
         foreach (var existing in identity.FindAll(NetoraClaimTypes.Role).ToList())
             identity.RemoveClaim(existing);
         foreach (var role in roles)

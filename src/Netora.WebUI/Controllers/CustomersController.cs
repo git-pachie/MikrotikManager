@@ -83,8 +83,8 @@ public class CustomersController(INetoraApiClient apiClient) : Controller
         var result = await apiClient.CreateCustomerAsync(model.ToRequest(), cancellationToken);
         if (result.Success && result.Data is not null)
         {
-            TempData[ToastKey] = $"Customer saved as Pending Approval (ID {result.Data.Id}). A Manager must approve it before the PPPoE account is created on the router.";
-            return Redirect("/customers");
+            TempData[ToastKey] = "Customer saved as Pending Approval. Set the PPPoE password below so a Manager can approve account creation.";
+            return Redirect($"/pppoe/{result.Data.Id}");
         }
 
         AddApiErrors(result.Error, "The customer was not saved.");

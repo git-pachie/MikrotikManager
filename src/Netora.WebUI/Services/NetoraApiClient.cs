@@ -7,6 +7,7 @@ using Netora.Application.Customers;
 using Netora.Application.Customers.Attachments;
 using Netora.Application.Health;
 using Netora.Application.Approvals;
+using Netora.Application.Operations;
 using Netora.Application.Pppoe;
 using Netora.Application.Router;
 using Netora.Application.Settings;
@@ -17,6 +18,10 @@ namespace Netora.WebUI.Services;
 /// <summary>The only way the WebUI reaches backend data: HTTP calls to the Web API.</summary>
 public interface INetoraApiClient
 {
+    Task<ApiResponse<DashboardDto>> GetDashboardAsync(CancellationToken cancellationToken);
+    Task<ApiResponse<OnuHistoryDto>> GetOnuHistoryAsync(int? customerId, string? search, int page, CancellationToken cancellationToken);
+    Task<ApiResponse<object>> ReplaceOnuAsync(int customerId, ReplaceOnuRequest request, CancellationToken cancellationToken);
+    Task<ApiResponse<PppoeDiagnosticsDto>> GetDiagnosticsAsync(int customerId, bool includeLogs, CancellationToken cancellationToken);
     Task<ApiResponse<HealthStatusDto>> GetHealthAsync(CancellationToken cancellationToken);
 
     Task<ApiResponse<LoginResultDto>> LoginAsync(LoginRequest request, CancellationToken cancellationToken);
@@ -92,6 +97,20 @@ public sealed record ApiFile(HttpResponseMessage? Response, string? ErrorCode);
 
 public sealed class NetoraApiClient(HttpClient httpClient, ILogger<NetoraApiClient> logger) : INetoraApiClient
 {
+    public Task<ApiResponse<DashboardDto>> GetDashboardAsync(CancellationToken cancellationToken)
+        => SendAsync<DashboardDto>(HttpMethod.Get, "api/v1/dashboard", null, cancellationToken);
+
+    public Task<ApiResponse<OnuHistoryDto>> GetOnuHistoryAsync(int? customerId, string? search, int page, CancellationToken cancellationToken)
+        => SendAsync<OnuHistoryDto>(HttpMethod.Get,
+            $"api/v1/onu-history?customerId={customerId}&page={page}&search={Uri.EscapeDataString(search ?? string.Empty)}",
+            null, cancellationToken);
+
+    public Task<ApiResponse<object>> ReplaceOnuAsync(int customerId, ReplaceOnuRequest request, CancellationToken cancellationToken)
+        => SendAsync<object>(HttpMethod.Post, $"api/v1/onu-history/{customerId}/replacements", request, cancellationToken);
+
+    public Task<ApiResponse<PppoeDiagnosticsDto>> GetDiagnosticsAsync(int customerId, bool includeLogs, CancellationToken cancellationToken)
+        => SendAsync<PppoeDiagnosticsDto>(HttpMethod.Get,
+            $"api/v1/customers/{customerId}/diagnostics?includeLogs={(includeLogs ? "true" : "false")}", null, cancellationToken);
     public Task<ApiResponse<HealthStatusDto>> GetHealthAsync(CancellationToken cancellationToken)
         => SendAsync<HealthStatusDto>(HttpMethod.Get, "api/v1/health", null, cancellationToken);
 

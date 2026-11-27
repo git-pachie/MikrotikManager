@@ -51,6 +51,7 @@ public static class ApprovalLabels
     public static string Provisioning(string status) => status switch
     {
         "NotSent" => "Not sent to router",
+        "Superseded" => "Superseded",
         "Succeeded" => "Done on router",
         "Failed" => "Router failed",
         _ => "Nothing to send",
