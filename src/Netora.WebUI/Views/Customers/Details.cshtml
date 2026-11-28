@@ -39,11 +39,11 @@
             }
             @if (d.CanDeletePppoe)
             {
-                <a class="btn btn-outline" href="/pppoe/@d.Id/delete?from=customer">Delete PPPoE Account</a>
+                <a class="btn btn-danger-outline" href="/pppoe/@d.Id/delete?from=customer">Delete PPPoE Account</a>
             }
             @if (User.IsInRole("Manager"))
             {
-                <a class="btn btn-outline" href="/customers/@d.Id/delete">Delete Customer</a>
+                <a class="btn btn-danger-outline" href="/customers/@d.Id/delete">Delete Customer</a>
             }
         </div>
     }

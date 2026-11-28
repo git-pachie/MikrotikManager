@@ -45,6 +45,7 @@ public sealed class CustomerDetailViewModel
         "CustomerUpdated" => "Customer updated",
         "AttachmentUploaded" => "Attachment uploaded",
         "AttachmentDeleted" => "Attachment deleted",
+        "PppoeSessionDisconnected" => "Force disconnect PPPoE session",
         _ => action,
     };
 

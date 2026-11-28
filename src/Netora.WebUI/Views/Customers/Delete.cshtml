@@ -24,7 +24,7 @@
         <div class="module-actions">
             @if (Model.CanDeletePppoe)
             {
-                <a class="btn btn-primary" href="/pppoe/@Model.Id/delete?from=customer">Delete PPPoE Account</a>
+                <a class="btn btn-danger-outline" href="/pppoe/@Model.Id/delete?from=customer">Delete PPPoE Account</a>
             }
             else
             {
@@ -39,7 +39,7 @@
         <p>Netora checks the router again, then removes this customer from its operational screens. Audit history is retained.</p>
         <form asp-controller="Customers" asp-action="Delete" asp-route-id="@Model.Id" method="post" class="module-actions">
             <input type="hidden" name="concurrencyStamp" value="@Model.ConcurrencyStamp">
-            <button type="submit" class="btn btn-danger text-bg-danger border-danger">Delete Customer</button>
+            <button type="submit" class="btn btn-danger">Delete Customer</button>
             <a class="btn btn-outline" href="/customers/@Model.Id">Cancel</a>
         </form>
     }

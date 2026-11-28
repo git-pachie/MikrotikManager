@@ -69,6 +69,7 @@ public static class DependencyInjection
         services.AddScoped<Netora.Application.Customers.Attachments.ICustomerAttachmentRepository, Customers.CustomerAttachmentRepository>();
 
         services.AddScoped<Netora.Application.Pppoe.IPppoeQueries, Pppoe.PppoeQueries>();
+        services.AddScoped<Netora.Application.Pppoe.IPppoeSessionCommands, Pppoe.PppoeSessionCommands>();
         services.AddScoped<Netora.Application.Pppoe.IApprovalRepository, Pppoe.ApprovalRepository>();
         services.AddSingleton<Netora.Application.Pppoe.IPppoePasswordProtector, Pppoe.PppoePasswordProtector>();
 

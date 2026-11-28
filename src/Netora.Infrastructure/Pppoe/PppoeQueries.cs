@@ -1,12 +1,13 @@
 using Microsoft.EntityFrameworkCore;
 using Netora.Application.Pppoe;
+using Netora.Application.Router;
 using Netora.Domain.Approvals;
 using Netora.Domain.Customers;
 using Netora.Infrastructure.Persistence;
 
 namespace Netora.Infrastructure.Pppoe;
 
-internal sealed class PppoeQueries(NetoraDbContext db) : IPppoeQueries
+internal sealed class PppoeQueries(NetoraDbContext db, IRouterClient? router = null) : IPppoeQueries
 {
     public async Task<PppoeListDto> ListAsync(PppoeListQuery query, bool viewerIsManager, CancellationToken cancellationToken)
     {
@@ -42,6 +43,26 @@ internal sealed class PppoeQueries(NetoraDbContext db) : IPppoeQueries
         };
 
         var pageSize = PppoeListQuery.AllowedPageSizes.Contains(query.PageSize) ? query.PageSize : 10;
+        var session = PppoeListQuery.NormalizeSession(query.Session);
+        HashSet<string>? active = null;
+        if (session is not null)
+        {
+            active = await ReadActiveNamesAsync(cancellationToken);
+            if (active is null)
+                return new PppoeListDto([], 0, 1, pageSize, stats, router?.Mode, SessionFilterUnavailable: true);
+
+            var online = session == "online";
+            if (online && active.Count == 0)
+                return new PppoeListDto([], 0, 1, pageSize, stats, router?.Mode);
+            if (active.Count > 0)
+            {
+                var names = active.ToArray();
+                // Match RouterOS usernames exactly even when the database's default collation ignores case.
+                filtered = db.Database.IsSqlServer()
+                    ? filtered.Where(c => names.Contains(EF.Functions.Collate(c.PppoeUsername, "Latin1_General_100_BIN2")) == online)
+                    : filtered.Where(c => names.Contains(c.PppoeUsername) == online);
+            }
+        }
         var total = await filtered.CountAsync(cancellationToken);
         var totalPages = Math.Max(1, (int)Math.Ceiling(total / (double)pageSize));
         var page = Math.Clamp(query.Page, 1, totalPages);
@@ -58,13 +79,19 @@ internal sealed class PppoeQueries(NetoraDbContext db) : IPppoeQueries
             })
             .ToListAsync(cancellationToken);
 
+        if (session is null && rows.Count > 0)
+            active = await ReadActiveNamesAsync(cancellationToken);
         var items = rows.Select(r => new PppoeListItemDto(
             r.Id, Customer.DisplayId(r.Id), Name(r.FirstName, r.LastName), r.PppoeUsername, r.PlanName,
             PppoeStates.AccountState(r.Status), r.RouterSyncStatus.ToString(), r.PasswordSet, r.Pending?.ToString(),
-            viewerIsManager && !r.DeletePending)).ToList();
+            viewerIsManager && !r.DeletePending, active?.Contains(r.PppoeUsername))).ToList();
 
-        return new PppoeListDto(items, total, page, pageSize, stats);
+        return new PppoeListDto(items, total, page, pageSize, stats, router?.Mode);
     }
+
+    private Task<HashSet<string>?> ReadActiveNamesAsync(CancellationToken ct)
+        => router is null ? Task.FromResult<HashSet<string>?>(null) : ReadSessionsAsync(async token =>
+            (await router.ListActivePppoeSessionsAsync(token)).Select(s => s.Name).ToHashSet(StringComparer.Ordinal), ct);
 
     public async Task<PppoeDetailDto?> GetAsync(int customerId, bool viewerIsManager, CancellationToken cancellationToken)
     {
@@ -79,6 +106,12 @@ internal sealed class PppoeQueries(NetoraDbContext db) : IPppoeQueries
             .ToListAsync(cancellationToken);
         var pending = requests.FirstOrDefault(r => r.Status == ApprovalStatus.Pending);
         var canChange = c.PppoeDeletionRequestedAtUtc is null && c.CanBeChangedBy(viewerIsManager);
+        var session = router is null ? null : await ReadSessionsAsync(async ct =>
+        {
+            var active = await router.FindActiveSessionAsync(c.PppoeUsername, ct);
+            return new PppoeSessionDto(active is not null, router.Mode,
+                viewerIsManager && active?.Reference is { } reference ? $"{router.Mode}:{reference}" : null);
+        }, cancellationToken) ?? new PppoeSessionDto(null, router.Mode);
 
         return new PppoeDetailDto(
             c.Id, Customer.DisplayId(c.Id), Name(c.FirstName, c.LastName), c.Status.ToString(), PppoeStates.AccountState(c.Status),
@@ -95,7 +128,17 @@ internal sealed class PppoeQueries(NetoraDbContext db) : IPppoeQueries
             // A rejected creation can be sent for approval again.
             CanResubmitCreate: canChange && pending is null && PppoeStates.Fits(ApprovalOperation.CreatePppoe, c.Status),
             CanDelete: viewerIsManager && canChange,
-            DeletionRequestId: requests.FirstOrDefault(r => r.Operation == ApprovalOperation.DeletePppoe)?.Id);
+            DeletionRequestId: requests.FirstOrDefault(r => r.Operation == ApprovalOperation.DeletePppoe)?.Id,
+            Session: session);
+    }
+
+    private static async Task<T?> ReadSessionsAsync<T>(Func<CancellationToken, Task<T>> read, CancellationToken ct) where T : class
+    {
+        using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        budget.CancelAfter(TimeSpan.FromSeconds(5));
+        try { return await read(budget.Token); }
+        catch (RouterException) { return null; }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested) { return null; }
     }
 
     private static IOrderedQueryable<Customer> Sort(IQueryable<Customer> source, PppoeListQuery query, IQueryable<ApprovalRequest> pending)

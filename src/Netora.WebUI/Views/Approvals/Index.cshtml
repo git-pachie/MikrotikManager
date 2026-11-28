@@ -33,15 +33,20 @@
     <div class="module-head approval-head">
         <h2>@(pendingView ? "Requests Awaiting Review" : "Approval Requests")</h2>
         <form class="approval-filter" method="get" action="/approvals" role="search">
-            <label class="visually-hidden" for="status">Show</label>
-            <select id="status" name="status" data-autosubmit aria-label="Show requests">
-                @foreach (var (value, label) in ApprovalLabels.StatusFilters)
-                {
-                    var count = value switch { "pending" => data.Counts.Pending, "approved" => data.Counts.Approved, "rejected" => data.Counts.Rejected, _ => data.Counts.Pending + data.Counts.Approved + data.Counts.Rejected };
-                    <option value="@value" selected="@(value == Model.Status)">@label (@count)</option>
-                }
-            </select>
-            <input type="search" name="search" value="@Model.Search" maxlength="100" placeholder="Customer or requester" aria-label="Search requests">
+            <div class="field">
+                <label for="status">Request status</label>
+                <select id="status" name="status" data-autosubmit>
+                    @foreach (var (value, label) in ApprovalLabels.StatusFilters)
+                    {
+                        var count = value switch { "pending" => data.Counts.Pending, "approved" => data.Counts.Approved, "rejected" => data.Counts.Rejected, _ => data.Counts.Pending + data.Counts.Approved + data.Counts.Rejected };
+                        <option value="@value" selected="@(value == Model.Status)">@label (@count)</option>
+                    }
+                </select>
+            </div>
+            <div class="field search-field">
+                <label for="search">Search requests</label>
+                <input id="search" type="search" name="search" value="@Model.Search" maxlength="100" placeholder="Customer or requester">
+            </div>
             <button type="submit" class="btn btn-primary">Search</button>
         </form>
     </div>

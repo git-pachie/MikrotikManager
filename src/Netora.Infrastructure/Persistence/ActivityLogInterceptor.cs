@@ -129,7 +129,8 @@ internal sealed class ActivityLogInterceptor(IActivityLog activity) : SaveChange
             "PppoeUpdated" => new(ActivityCategories.Pppoe, a.Action, outcome, target, a.Detail, Actor: a.ActorUserName),
             "CustomerCreated" or "CustomerDeleted" or "AttachmentUploaded" or "AttachmentDeleted" or "OnuReplaced"
                 => new(ActivityCategories.Customers, a.Action, outcome, target, Actor: a.ActorUserName),
-            "CustomerImported" => new(ActivityCategories.Pppoe, a.Action, outcome, target, Actor: a.ActorUserName),
+            "CustomerImported" or "PppoeSessionDisconnected" => new(ActivityCategories.Pppoe, a.Action, outcome, target,
+                a.Action == "PppoeSessionDisconnected" ? a.Detail : null, Actor: a.ActorUserName),
             // Approval steps come from the ApprovalRequest rows; router results from RouterProvisioner.
             _ => null,
         };

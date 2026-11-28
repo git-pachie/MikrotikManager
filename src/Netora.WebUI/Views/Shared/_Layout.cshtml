@@ -12,12 +12,13 @@
     <script src="~/js/theme.js" asp-append-version="true"></script>
 </head>
 <body>
+    <a class="skip-link" href="#main-content">Skip to content</a>
     <partial name="_Icons" />
     <div class="app">
         <partial name="_Sidebar" />
         <div class="workspace">
             <partial name="_Topbar" />
-            <main class="content">
+            <main class="content" id="main-content" tabindex="-1">
                 @RenderBody()
             </main>
         </div>

@@ -5,7 +5,6 @@
     ViewData["Title"] = "Customers";
     ViewData["Nav"] = "customers";
     var data = Model.Data;
-    const string later = "Available in a later phase";
 }
 <div class="heading">
     <div class="heading-title">
@@ -16,9 +15,11 @@
         </div>
     </div>
     <div class="heading-actions">
-        <a class="btn btn-outline" href="/pppoe/import"><svg class="icon"><use href="#upload" /></svg>Import PPPoE</a>
+        @if (User.IsInRole("Manager"))
+        {
+            <a class="btn btn-outline" href="/pppoe/import"><svg class="icon"><use href="#upload" /></svg>Import PPPoE</a>
+        }
         <a class="btn btn-success" href="/customers/new"><svg class="icon"><use href="#plus" /></svg>Add Customer</a>
-        <button type="button" class="btn btn-icon" disabled title="@later" aria-label="More actions"><svg class="icon"><use href="#chevron" /></svg></button>
     </div>
 </div>
 
@@ -55,7 +56,7 @@
             <input type="hidden" name="sortDir" value="@(Model.Descending ? "desc" : "asc")">
         }
         <div class="field">
-            <label for="search">&nbsp;</label>
+            <label for="search">Search customers</label>
             <div class="search-wrap">
                 <svg class="icon"><use href="#icon-search" /></svg>
                 <input id="search" name="search" type="search" value="@Model.Search" maxlength="100" placeholder="Search by name, username, phone, or address..." autocomplete="off">
@@ -149,12 +150,12 @@
                                 <a class="action-btn" href="/diagnostics?customerId=@c.Id" title="Diagnostics" aria-label="Diagnostics for @c.PppoeUsername"><svg class="icon"><use href="#pulse" /></svg></a>
                                 @if (c.CanDeletePppoe)
                                 {
-                                    <a class="btn btn-outline" href="/pppoe/@c.Id/delete?from=customers"
+                                    <a class="btn btn-danger-outline" href="/pppoe/@c.Id/delete?from=customers"
                                        aria-label="Delete PPPoE account for @c.Name" title="Delete PPPoE account">Delete PPPoE</a>
                                 }
                                 @if (User.IsInRole("Manager"))
                                 {
-                                    <a class="btn btn-outline" href="/customers/@c.Id/delete"
+                                    <a class="btn btn-danger-outline" href="/customers/@c.Id/delete"
                                        aria-label="Delete customer @c.Name">Delete Customer</a>
                                 }
                             </div>
@@ -172,7 +173,7 @@
     }
     <div class="pagination-bar">
         <div>Showing @first to @last of @data.TotalMatching customers</div>
-        <div class="pager" aria-label="Pagination">
+        <nav class="pager" aria-label="Pagination">
             <button type="submit" form="filters" name="page" value="1" disabled="@(data.Page <= 1)" aria-label="First page">«</button>
             <button type="submit" form="filters" name="page" value="@(data.Page - 1)" disabled="@(data.Page <= 1)" aria-label="Previous page">‹</button>
             @for (var p = 1; p <= totalPages; p++)
@@ -181,7 +182,7 @@
             }
             <button type="submit" form="filters" name="page" value="@(data.Page + 1)" disabled="@(data.Page >= totalPages)" aria-label="Next page">›</button>
             <button type="submit" form="filters" name="page" value="@totalPages" disabled="@(data.Page >= totalPages)" aria-label="Last page">»</button>
-        </div>
+        </nav>
         <div class="rows-select">
             <label for="pageSize">Rows per page:</label>
             <select id="pageSize" name="pageSize" form="filters" data-autosubmit>

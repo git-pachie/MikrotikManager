@@ -8,6 +8,20 @@ namespace Netora.WebUI.Controllers;
 
 public class PppoeController(INetoraApiClient apiClient) : Controller
 {
+    [HttpPost("/pppoe/{id:int}/disconnect")]
+    public async Task<IActionResult> Disconnect(int id, string? sessionReference, CancellationToken ct)
+    {
+        if (!User.IsInRole("Manager")) return Forbid();
+        var result = await apiClient.DisconnectPppoeSessionAsync(id, new(sessionReference), ct);
+        if (result.Error?.Code == "not_found") return NotFoundPage();
+        if (result.Success && result.Data is { } session)
+            TempData[CustomersController.ToastKey] = session.RouterMode == "Mock"
+                ? "Session disconnected on the mock router." : "PPPoE session disconnected. The subscriber can reconnect.";
+        else
+            TempData[CustomersController.ErrorKey] = result.Error?.Message ?? "The session could not be disconnected.";
+        return Redirect($"/pppoe/{id}");
+    }
+
     [HttpPost("/pppoe/{id:int}/password")]
     [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
     public async Task<IActionResult> RevealPassword(int id, CancellationToken cancellationToken)
@@ -72,21 +86,24 @@ public class PppoeController(INetoraApiClient apiClient) : Controller
     }
 
     [HttpGet("/pppoe")]
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
     public async Task<IActionResult> Index(string? search, string? state, int page = 1, int pageSize = 10,
-        string? sortBy = null, string? sortDir = null, CancellationToken cancellationToken = default)
+        string? sortBy = null, string? sortDir = null, string? session = null, CancellationToken cancellationToken = default)
     {
         if (!PppoeListQuery.AllowedPageSizes.Contains(pageSize)) pageSize = 10;
         state = PppoeListQuery.States.Contains(state) ? state : null;
+        session = PppoeListQuery.NormalizeSession(session);
         sortBy = PppoeListQuery.SortColumns.Contains(sortBy) ? sortBy : null;
         var descending = sortBy is not null && string.Equals(sortDir, "desc", StringComparison.OrdinalIgnoreCase);
 
         var result = await apiClient.GetPppoeAccountsAsync(
-            new PppoeListQuery(search?.Trim(), state, Math.Max(1, page), pageSize, sortBy, descending ? "desc" : "asc"),
+            new PppoeListQuery(search?.Trim(), state, Math.Max(1, page), pageSize, sortBy, descending ? "desc" : "asc", session),
             cancellationToken);
         return View(new PppoeListViewModel
         {
             Search = search?.Trim(),
             State = state ?? "all",
+            Session = session,
             PageSize = pageSize,
             SortBy = sortBy,
             Descending = descending,
@@ -138,6 +155,7 @@ public class PppoeController(INetoraApiClient apiClient) : Controller
     }
 
     [HttpGet("/pppoe/{id:int}")]
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
     public async Task<IActionResult> Edit(int id, CancellationToken cancellationToken)
     {
         var result = await apiClient.GetPppoeAccountAsync(id, cancellationToken);

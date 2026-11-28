@@ -40,10 +40,10 @@ internal sealed class ApprovalEmailDispatcher(
                 {
                     await RecordDeliveryAsync(item, "Email failed", stoppingToken);
                     var error = item.Kind == ApprovalNoticeKind.PppoeCreationApproved ? ex.GetType().Name : SmtpEmailSender.Describe(ex);
-                    logger.LogInformation("ApprovalEmailFailed RequestId={RequestId} Kind={Kind} Error={Error}",
-                        item.Notice.RequestId, item.Kind, error);
+                    logger.LogInformation("ApprovalEmailFailed Target={Target} Kind={Kind} Error={Error}",
+                        item.Target, item.Kind, error);
                     (activity ?? NullActivityLog.Instance).Write(new ActivityEvent(ActivityCategories.Application,
-                        "EmailDeliveryFailed", ActivityOutcomes.Failure, ActivityTargets.Request(item.Notice.RequestId),
+                        "EmailDeliveryFailed", ActivityOutcomes.Failure, item.Target,
                         $"email={item.Kind} error={ex.GetType().Name}", ActivityLevel.Warning, Actor: "system"));
                 }
             }
@@ -60,17 +60,16 @@ internal sealed class ApprovalEmailDispatcher(
         EmailOptions settings;
         using (var scope = scopes.CreateScope())
             settings = await scope.ServiceProvider.GetRequiredService<IEmailSettingsProvider>().GetAsync(cancellationToken);
-        var notice = item.Notice;
         if (settings.NotReadyReason is { } reason)
         {
             await RecordDeliveryAsync(item, "Email skipped", cancellationToken);
-            logger.LogInformation("ApprovalEmailSkipped RequestId={RequestId} Kind={Kind} Reason={Reason}", notice.RequestId, item.Kind, reason);
+            logger.LogInformation("ApprovalEmailSkipped Target={Target} Kind={Kind} Reason={Reason}", item.Target, item.Kind, reason);
             return;
         }
         if (item.Kind == ApprovalNoticeKind.PppoeCreationApproved && settings.Smtp.EffectiveSecurity == SmtpSecurityMode.None)
         {
             await RecordDeliveryAsync(item, "Email skipped", cancellationToken);
-            logger.LogWarning("ApprovalEmailSkipped RequestId={RequestId} Kind={Kind} Reason=SmtpTlsRequired", notice.RequestId, item.Kind);
+            logger.LogWarning("ApprovalEmailSkipped Target={Target} Kind={Kind} Reason=SmtpTlsRequired", item.Target, item.Kind);
             return;
         }
 
@@ -78,7 +77,7 @@ internal sealed class ApprovalEmailDispatcher(
         if (recipients.Count == 0)
         {
             await RecordDeliveryAsync(item, "No email recipients", cancellationToken);
-            logger.LogInformation("ApprovalEmailSkipped RequestId={RequestId} Kind={Kind} Reason=NoRecipients", notice.RequestId, item.Kind);
+            logger.LogInformation("ApprovalEmailSkipped Target={Target} Kind={Kind} Reason=NoRecipients", item.Target, item.Kind);
             return;
         }
 
@@ -92,18 +91,19 @@ internal sealed class ApprovalEmailDispatcher(
         await SmtpEmailSender.SendAsync(settings, message, cancellationToken);
         await RecordDeliveryAsync(item, "Accepted by SMTP", cancellationToken);
 
-        logger.LogInformation("ApprovalEmailSent RequestId={RequestId} Kind={Kind} Recipients={Count}", notice.RequestId, item.Kind, recipients.Count);
+        logger.LogInformation("ApprovalEmailSent Target={Target} Kind={Kind} Recipients={Count}", item.Target, item.Kind, recipients.Count);
     }
 
     private async Task RecordDeliveryAsync(QueuedApprovalNotice item, string status, CancellationToken ct)
     {
+        if (item.Notice is not { } notice) return;
         try
         {
             using var scope = scopes.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<NetoraDbContext>();
             db.ApprovalEmailDeliveries.Add(new ApprovalEmailDelivery
             {
-                RequestId = item.Notice.RequestId,
+                RequestId = notice.RequestId,
                 Kind = item.Kind.ToString(),
                 Status = status,
                 OccurredAtUtc = DateTimeOffset.UtcNow,
@@ -113,11 +113,11 @@ internal sealed class ApprovalEmailDispatcher(
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
             logger.LogWarning("ApprovalEmailHistoryUnavailable RequestId={RequestId} ErrorKind={ErrorKind}",
-                item.Notice.RequestId, ex.GetType().Name);
+                notice.RequestId, ex.GetType().Name);
         }
     }
 
-    private async Task<List<string>> RecipientsAsync(QueuedApprovalNotice item, CancellationToken cancellationToken)
+    internal async Task<List<string>> RecipientsAsync(QueuedApprovalNotice item, CancellationToken cancellationToken)
     {
         using var scope = scopes.CreateScope();
         var users = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
@@ -129,26 +129,36 @@ internal sealed class ApprovalEmailDispatcher(
                 && await users.IsInRoleAsync(admin, Roles.Manager) ? [admin.Email!] : [];
         }
 
-        if (item.Kind is ApprovalNoticeKind.Submitted or ApprovalNoticeKind.PppoeDeleted)
+        if (item.Kind is ApprovalNoticeKind.Submitted or ApprovalNoticeKind.PppoeDeleted or ApprovalNoticeKind.PppoeSessionDisconnected)
         {
             var managers = await users.GetUsersInRoleAsync(Roles.Manager);
             return managers
                 .Where(u => u.IsActive && !string.IsNullOrWhiteSpace(u.Email)
-                    && (item.Kind == ApprovalNoticeKind.PppoeDeleted || u.Id != item.Notice.RequestedByUserId))
+                    && (item.Kind != ApprovalNoticeKind.Submitted || u.Id != item.Notice!.RequestedByUserId))
                 .Select(u => u.Email!)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        var requester = await users.FindByIdAsync(item.Notice.RequestedByUserId);
+        var requester = await users.FindByIdAsync(item.Notice!.RequestedByUserId);
         return requester is { IsActive: true } && !string.IsNullOrWhiteSpace(requester.Email) ? [requester.Email!] : [];
     }
 
     internal static (string Subject, string Body) Compose(QueuedApprovalNotice item, EmailOptions settings,
         IPppoePasswordProtector? passwords = null)
     {
-        var n = item.Notice;
+        if (item.Disconnect is { } session)
+        {
+            var customer = Netora.Domain.Customers.Customer.DisplayId(session.CustomerId);
+            var router = session.RouterMode == "Mock" ? "the mock router" : "MikroTik";
+            var body = $"{session.Actor} disconnected the active PPPoE session for {customer} ({session.Username}) on {router}.\n" +
+                       $"Time (Singapore): {session.OccurredAtUtc.ToOffset(TimeSpan.FromHours(8)):yyyy-MM-dd HH:mm:ss}\n\n" +
+                       "The account remains configured and the subscriber can reconnect.";
+            return ($"[Netora] PPPoE session disconnected for {customer}", body);
+        }
+
+        var n = item.Notice!;
         var operation = OperationLabel(n.Operation);
         var link = string.IsNullOrWhiteSpace(settings.AppBaseUrl)
             ? null

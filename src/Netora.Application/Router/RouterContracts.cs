@@ -22,7 +22,11 @@ public sealed record RouterSecretWrite(
     string? RemoteAddress,
     string? LocalAddress);
 
-public sealed record RouterActiveSession(string Name, string? Address, string? Uptime, string? CallerId);
+public sealed record RouterActiveSession(string Name, string? Address, string? Uptime, string? CallerId,
+    string? Id = null, string? SessionId = null)
+{
+    public string? Reference => string.IsNullOrEmpty(Id) || string.IsNullOrEmpty(SessionId) ? null : $"{Id}:{SessionId}";
+}
 
 public sealed record RouterPppoeLog(string? RouterTime, string Event);
 
@@ -69,6 +73,8 @@ public interface IRouterClient
     Task DeleteSecretAsync(string id, CancellationToken cancellationToken);
 
     Task<RouterActiveSession?> FindActiveSessionAsync(string name, CancellationToken cancellationToken);
+    Task<IReadOnlyList<RouterActiveSession>> ListActivePppoeSessionsAsync(CancellationToken cancellationToken);
+    Task DisconnectPppoeSessionAsync(string id, CancellationToken cancellationToken);
 
     Task<IReadOnlyList<RouterPppoeLog>> ReadPppoeLogsAsync(string name, CancellationToken cancellationToken);
 

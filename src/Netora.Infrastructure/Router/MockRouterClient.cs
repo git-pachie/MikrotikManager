@@ -73,8 +73,27 @@ internal sealed class MockRouterClient(
         => WithStateAsync(s =>
         {
             var x = s.Secrets.FirstOrDefault(v => string.Equals(v.Name, name, StringComparison.Ordinal));
-            return x is { Online: true, Disabled: false } ? new RouterActiveSession(x.Name, x.Address, "3d4h12m", "AA:BB:CC:00:00:" + x.Id.TrimStart('*').PadLeft(2, '0')[^2..]) : null;
+            return x is { Online: true, Disabled: false } && x.Service is null or "" or "pppoe" or "any" ? ToSession(x) : null;
         }, save: false, cancellationToken);
+
+    public Task<IReadOnlyList<RouterActiveSession>> ListActivePppoeSessionsAsync(CancellationToken cancellationToken)
+        => WithStateAsync<IReadOnlyList<RouterActiveSession>>(s => s.Secrets
+            .Where(x => x.Online && !x.Disabled && x.Service is null or "" or "pppoe" or "any")
+            .Select(ToSession).ToList(), save: false, cancellationToken);
+
+    public Task DisconnectPppoeSessionAsync(string id, CancellationToken cancellationToken)
+        => WithStateAsync(s =>
+        {
+            FailIfConfigured();
+            var session = s.Secrets.FirstOrDefault(x => x.Id == id && x.Online && !x.Disabled
+                && x.Service is null or "" or "pppoe" or "any");
+            if (session is null) throw new RouterException(RouterErrorKind.NotFound, "The PPPoE session has ended.");
+            session.Online = false;
+            return true;
+        }, save: true, cancellationToken);
+
+    private static RouterActiveSession ToSession(MockSecret x)
+        => new(x.Name, x.Address, "3d4h12m", "AA:BB:CC:00:00:" + x.Id.TrimStart('*').PadLeft(2, '0')[^2..], x.Id, x.Id);
 
     public Task DeleteSecretAsync(string id, CancellationToken cancellationToken)
         => WithStateAsync(s =>

@@ -20,6 +20,7 @@ public sealed class RecordingNotifier : Netora.Application.Approvals.IApprovalNo
     public List<Netora.Application.Approvals.ApprovalNotice> Decided { get; } = [];
     public List<Netora.Application.Approvals.ApprovalNotice> Deletions { get; } = [];
     public List<Netora.Application.Approvals.ApprovedPppoeDetails> Creations { get; } = [];
+    public List<Netora.Application.Approvals.PppoeDisconnectNotice> Disconnects { get; } = [];
     public bool Throw { get; set; }
 
     public void RequestSubmitted(Netora.Application.Approvals.ApprovalNotice notice)
@@ -38,6 +39,8 @@ public sealed class RecordingNotifier : Netora.Application.Approvals.IApprovalNo
 
     public void PppoeCreationApproved(Netora.Application.Approvals.ApprovalNotice notice,
         Netora.Application.Approvals.ApprovedPppoeDetails details) => Creations.Add(details);
+
+    public void PppoeSessionDisconnected(Netora.Application.Approvals.PppoeDisconnectNotice notice) => Disconnects.Add(notice);
 }
 
 public sealed class RecordingProvisioner : Netora.Application.Router.IRouterProvisioner

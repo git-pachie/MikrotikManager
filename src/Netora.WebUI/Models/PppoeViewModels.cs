@@ -11,6 +11,7 @@ public sealed class PppoeListViewModel
 {
     public string? Search { get; init; }
     public string State { get; init; } = "all";
+    public string? Session { get; init; }
     public int PageSize { get; init; } = 10;
     public string? SortBy { get; init; }
     public bool Descending { get; init; }
@@ -32,6 +33,7 @@ public sealed class PppoeListViewModel
         var q = new List<string> { $"page={page}", $"pageSize={PageSize}" };
         if (!string.IsNullOrWhiteSpace(Search)) q.Add("search=" + Uri.EscapeDataString(Search));
         if (State != "all") q.Add("state=" + State);
+        if (Session is not null) q.Add("session=" + Session);
         if (sortBy is not null) { q.Add("sortBy=" + sortBy); q.Add("sortDir=" + sortDir); }
         return "/pppoe?" + string.Join("&", q);
     }
@@ -94,6 +96,27 @@ public sealed class PppoeFormViewModel
 
 public static class PppoeLabels
 {
+    public static string Session(bool? connected) => connected switch
+    {
+        true => "Online",
+        false => "Offline",
+        null => "Unavailable",
+    };
+
+    public static string SessionIcon(bool? connected) => connected switch
+    {
+        true => "online",
+        false => "offline",
+        null => "unavailable",
+    };
+
+    public static string SessionPill(bool? connected) => connected switch
+    {
+        true => "active",
+        false => "unknown",
+        null => "disabled",
+    };
+
     public static string State(string state) => state switch
     {
         "NotCreated" => "Not created",

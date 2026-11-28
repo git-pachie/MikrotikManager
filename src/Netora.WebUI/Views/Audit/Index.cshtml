@@ -19,19 +19,27 @@
     <div class="module-head approval-head">
         <h2>Audit Events</h2>
         <form class="approval-filter audit-filter" method="get" action="/audit" role="search">
-            <label class="visually-hidden" for="from">From</label>
-            <input id="from" type="date" name="from" value="@(Model.From is { } f ? AuditViewModel.Date(f) : "")" aria-label="From date">
-            <label class="visually-hidden" for="to">To</label>
-            <input id="to" type="date" name="to" value="@(Model.To is { } t ? AuditViewModel.Date(t) : "")" aria-label="To date">
-            <select name="category" aria-label="Category">
-                <option value="">All categories</option>
-                @foreach (var c in Netora.Application.Audit.AuditCategories.All)
-                {
-                    <option value="@c" selected="@(c == Model.Category)">@c</option>
-                }
-            </select>
-            <input type="search" name="actor" value="@Model.Actor" maxlength="100" placeholder="Actor" aria-label="Actor">
-            <input type="search" name="search" value="@Model.Search" maxlength="100" placeholder="Customer, action or detail" aria-label="Search">
+            <div class="field"><label for="from">From date</label>
+                <input id="from" type="date" name="from" value="@(Model.From is { } f ? AuditViewModel.Date(f) : "")">
+            </div>
+            <div class="field"><label for="to">To date</label>
+                <input id="to" type="date" name="to" value="@(Model.To is { } t ? AuditViewModel.Date(t) : "")">
+            </div>
+            <div class="field"><label for="category">Category</label>
+                <select id="category" name="category">
+                    <option value="">All categories</option>
+                    @foreach (var c in Netora.Application.Audit.AuditCategories.All)
+                    {
+                        <option value="@c" selected="@(c == Model.Category)">@c</option>
+                    }
+                </select>
+            </div>
+            <div class="field"><label for="actor">Actor</label>
+                <input id="actor" type="search" name="actor" value="@Model.Actor" maxlength="100">
+            </div>
+            <div class="field search-field"><label for="search">Search events</label>
+                <input id="search" type="search" name="search" value="@Model.Search" maxlength="100" placeholder="Customer, action, or detail">
+            </div>
             <button type="submit" class="btn btn-primary">Filter</button>
             @if (Model.Filtered) { <a class="btn btn-outline" href="/audit">Clear</a> }
         </form>

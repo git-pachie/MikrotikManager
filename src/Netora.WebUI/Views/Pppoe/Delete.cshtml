@@ -25,7 +25,7 @@
     <form asp-controller="Pppoe" asp-action="Delete" asp-route-id="@Model.CustomerId" method="post" class="module-actions">
         <input type="hidden" name="concurrencyStamp" value="@Model.ConcurrencyStamp">
         <input type="hidden" name="from" value="@source">
-        <button type="submit" class="btn btn-danger text-bg-danger border-danger">Delete PPPoE Account</button>
+        <button type="submit" class="btn btn-danger">Delete PPPoE Account</button>
         <a class="btn btn-outline" href="@returnPath">Cancel</a>
     </form>
 </section>

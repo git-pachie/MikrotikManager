@@ -55,6 +55,7 @@ public static class AuditLabels
         ["AttachmentUploaded"] = "Uploaded attachment",
         ["AttachmentDeleted"] = "Deleted attachment",
         ["PppoeUpdated"] = "Edited PPPoE details",
+        ["PppoeSessionDisconnected"] = "Force disconnect PPPoE session",
         ["PppoeDeleted"] = "Deleted PPPoE account",
         ["PppoePendingRequestClosed"] = "Closed pending PPPoE request",
         ["CustomerImported"] = "Imported from router",
@@ -122,7 +123,7 @@ public static class AuditLabels
         ["LoginSucceeded", "LoginFailed", "LockoutTriggered", "Logout", "PasswordChanged", "ProfileUpdated"];
 
     public static readonly IReadOnlyList<string> CustomerActions = ["CustomerCreated", "CustomerUpdated", "CustomerDeleted", "AttachmentUploaded", "AttachmentDeleted", "OnuReplaced"];
-    public static readonly IReadOnlyList<string> PppoeActions = ["PppoeUpdated", "CustomerImported", "PppoeDeleted"];
+    public static readonly IReadOnlyList<string> PppoeActions = ["PppoeUpdated", "CustomerImported", "PppoeDeleted", "PppoeSessionDisconnected"];
     public static readonly IReadOnlyList<string> RouterActions = ["RouterProvisioned", "RouterProvisioningFailed"];
 
     /// <summary>User administration reasons end with ", by {actor}" (or are just "by {actor}"). Returns the actor and the rest.</summary>

@@ -15,8 +15,31 @@ namespace Netora.WebApi.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/v1/pppoe")]
-public sealed class PppoeController(IPppoeQueries queries, IPppoeCommands commands) : ControllerBase
+public sealed class PppoeController(IPppoeQueries queries, IPppoeCommands commands, IPppoeSessionCommands sessions) : ControllerBase
 {
+    /// <summary>Manager only. Rechecks the selected live session, then disconnects it.</summary>
+    [HttpPost("{customerId:int}/disconnect")]
+    [Authorize(Policy = Policies.ManagerOnly)]
+    [ProducesResponseType(typeof(ApiResponse<DisconnectPppoeResult>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status502BadGateway)]
+    public async Task<IActionResult> Disconnect(int customerId, [FromBody] DisconnectPppoeRequest request, CancellationToken ct)
+    {
+        var actor = CurrentActor();
+        if (actor is null) return Unauthenticated();
+        var result = await sessions.DisconnectAsync(customerId, request, actor, ct);
+        var trace = HttpContext.TraceIdentifier;
+        return result.Outcome switch
+        {
+            DisconnectPppoeOutcome.Disconnected => Ok(ApiResponse<DisconnectPppoeResult>.Ok(result, trace)),
+            DisconnectPppoeOutcome.SessionChanged => Conflict(ApiResponse<object>.Fail("session_changed", "The session ended or changed. Refresh to check the current session.", trace)),
+            DisconnectPppoeOutcome.NotFound => Failure(new(PppoeOutcome.NotFound)),
+            DisconnectPppoeOutcome.Forbidden => Failure(new(PppoeOutcome.Forbidden)),
+            _ => StatusCode(StatusCodes.Status502BadGateway, ApiResponse<object>.Fail("router_error",
+                "The router did not confirm the disconnect. Refresh to check the current session.", trace)),
+        };
+    }
+
     [HttpPost("{customerId:int}/password")]
     [Authorize(Policy = Policies.ManagerOnly)]
     [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
@@ -51,12 +74,13 @@ public sealed class PppoeController(IPppoeQueries queries, IPppoeCommands comman
         return deletion.ProvisioningStatus == "Succeeded" ? Ok(response) : Accepted(response);
     }
 
-    /// <summary>PPPoE accounts with counts. Accounts of Manager-only customers are excluded for Staff, also from the counts.</summary>
+    /// <summary>PPPoE accounts with counts. Session accepts online or offline. Staff only see accounts they can access.</summary>
     [HttpGet]
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
     [ProducesResponseType(typeof(ApiResponse<PppoeListDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> List([FromQuery] string? search, [FromQuery] string? state,
         [FromQuery] int page = 1, [FromQuery] int pageSize = 10, [FromQuery] string? sortBy = null,
-        [FromQuery] string? sortDir = null, CancellationToken cancellationToken = default)
+        [FromQuery] string? sortDir = null, [FromQuery] string? session = null, CancellationToken cancellationToken = default)
     {
         var column = sortBy?.Trim().ToLowerInvariant();
         var query = new PppoeListQuery(
@@ -64,13 +88,15 @@ public sealed class PppoeController(IPppoeQueries queries, IPppoeCommands comman
             PppoeListQuery.States.Contains(state?.Trim().ToLowerInvariant()) ? state!.Trim().ToLowerInvariant() : null,
             page, pageSize,
             PppoeListQuery.SortColumns.Contains(column) ? column : null,
-            string.Equals(sortDir, "desc", StringComparison.OrdinalIgnoreCase) ? "desc" : "asc");
+            string.Equals(sortDir, "desc", StringComparison.OrdinalIgnoreCase) ? "desc" : "asc",
+            PppoeListQuery.NormalizeSession(session));
         var result = await queries.ListAsync(query, IsManager, cancellationToken);
         return Ok(ApiResponse<PppoeListDto>.Ok(result, HttpContext.TraceIdentifier));
     }
 
     /// <summary>One account. 404 both for a missing customer and for a Manager-only customer requested by Staff.</summary>
     [HttpGet("{customerId:int}")]
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
     [ProducesResponseType(typeof(ApiResponse<PppoeDetailDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<PppoeDetailDto>), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Get(int customerId, CancellationToken cancellationToken)

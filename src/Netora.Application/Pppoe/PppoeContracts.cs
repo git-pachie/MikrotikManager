@@ -13,7 +13,8 @@ public sealed record PppoeListQuery(
     int Page = 1,
     int PageSize = 10,
     string? SortBy = null,
-    string? SortDir = null)
+    string? SortDir = null,
+    string? Session = null)
 {
     public static readonly int[] AllowedPageSizes = [10, 20, 50];
     public static readonly string[] SortColumns = ["username", "customer", "plan", "state", "requested"];
@@ -22,6 +23,12 @@ public sealed record PppoeListQuery(
     public static readonly string[] States = ["enabled", "disabled", "notcreated", "terminated", "requested"];
 
     public bool Descending => string.Equals(SortDir, "desc", StringComparison.OrdinalIgnoreCase);
+
+    public static string? NormalizeSession(string? value)
+    {
+        var normalized = value?.Trim().ToLowerInvariant();
+        return normalized is "online" or "offline" ? normalized : null;
+    }
 }
 
 public sealed record PppoeListItemDto(
@@ -34,11 +41,13 @@ public sealed record PppoeListItemDto(
     string RouterSyncStatus,
     bool PasswordSet,
     string? PendingOperation,
-    bool CanDelete = false);
+    bool CanDelete = false,
+    bool? SessionConnected = null);
 
 public sealed record PppoeStatsDto(int Total, int Enabled, int Disabled, int NotCreated, int PendingRequests);
 
-public sealed record PppoeListDto(IReadOnlyList<PppoeListItemDto> Items, int TotalMatching, int Page, int PageSize, PppoeStatsDto Stats);
+public sealed record PppoeListDto(IReadOnlyList<PppoeListItemDto> Items, int TotalMatching, int Page, int PageSize, PppoeStatsDto Stats,
+    string? SessionRouterMode = null, bool SessionFilterUnavailable = false);
 
 public sealed record ApprovalRequestDto(
     long Id,
@@ -79,7 +88,18 @@ public sealed record PppoeDetailDto(
     bool CanRequestTerminate = false,
     bool CanResubmitCreate = false,
     bool CanDelete = false,
-    long? DeletionRequestId = null);
+    long? DeletionRequestId = null,
+    PppoeSessionDto? Session = null);
+
+public sealed record PppoeSessionDto(bool? Connected, string RouterMode, string? DisconnectReference = null);
+public sealed record DisconnectPppoeRequest(string? SessionReference);
+public enum DisconnectPppoeOutcome { Disconnected, SessionChanged, NotFound, Forbidden, RouterError }
+public sealed record DisconnectPppoeResult(DisconnectPppoeOutcome Outcome, string? RouterMode = null);
+
+public interface IPppoeSessionCommands
+{
+    Task<DisconnectPppoeResult> DisconnectAsync(int customerId, DisconnectPppoeRequest request, CustomerActor actor, CancellationToken ct);
+}
 
 public sealed record DeletePppoeRequest(string ConcurrencyStamp);
 

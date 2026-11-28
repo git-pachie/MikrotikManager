@@ -52,6 +52,7 @@ public interface INetoraApiClient
     Task<ApiFile> DownloadAttachmentAsync(int customerId, long attachmentId, CancellationToken cancellationToken);
     Task<ApiResponse<PppoeListDto>> GetPppoeAccountsAsync(PppoeListQuery query, CancellationToken cancellationToken);
     Task<ApiResponse<PppoeDetailDto>> GetPppoeAccountAsync(int customerId, CancellationToken cancellationToken);
+    Task<ApiResponse<DisconnectPppoeResult>> DisconnectPppoeSessionAsync(int customerId, DisconnectPppoeRequest request, CancellationToken ct);
     Task<ApiResponse<PppoePasswordDto>> RevealPppoePasswordAsync(int customerId, CancellationToken cancellationToken);
     Task<ApiResponse<ApprovalRequestDto>> DeletePppoeAccountAsync(int customerId, DeletePppoeRequest request, CancellationToken cancellationToken);
     Task<ApiResponse<PppoeChangedDto>> UpdatePppoeAccountAsync(int customerId, UpdatePppoeRequest request, CancellationToken cancellationToken);
@@ -200,17 +201,21 @@ public sealed class NetoraApiClient(HttpClient httpClient, ILogger<NetoraApiClie
         }
     }
 
-        public Task<ApiResponse<PppoeListDto>> GetPppoeAccountsAsync(PppoeListQuery query, CancellationToken cancellationToken)
+    public Task<ApiResponse<PppoeListDto>> GetPppoeAccountsAsync(PppoeListQuery query, CancellationToken cancellationToken)
     {
         var parts = new List<string> { $"page={query.Page}", $"pageSize={query.PageSize}" };
         if (!string.IsNullOrWhiteSpace(query.Search)) parts.Add("search=" + Uri.EscapeDataString(query.Search));
         if (query.State is not null) parts.Add("state=" + Uri.EscapeDataString(query.State));
+        if (query.Session is { } session) parts.Add("session=" + Uri.EscapeDataString(session));
         if (query.SortBy is not null) { parts.Add("sortBy=" + query.SortBy); parts.Add("sortDir=" + (query.Descending ? "desc" : "asc")); }
         return SendAsync<PppoeListDto>(HttpMethod.Get, "api/v1/pppoe?" + string.Join("&", parts), null, cancellationToken);
     }
 
     public Task<ApiResponse<PppoeDetailDto>> GetPppoeAccountAsync(int customerId, CancellationToken cancellationToken)
         => SendAsync<PppoeDetailDto>(HttpMethod.Get, $"api/v1/pppoe/{customerId}", null, cancellationToken);
+
+    public Task<ApiResponse<DisconnectPppoeResult>> DisconnectPppoeSessionAsync(int customerId, DisconnectPppoeRequest request, CancellationToken ct)
+        => SendAsync<DisconnectPppoeResult>(HttpMethod.Post, $"api/v1/pppoe/{customerId}/disconnect", request, ct);
 
     public Task<ApiResponse<PppoePasswordDto>> RevealPppoePasswordAsync(int customerId, CancellationToken cancellationToken)
         => SendAsync<PppoePasswordDto>(HttpMethod.Post, $"api/v1/pppoe/{customerId}/password", null, cancellationToken);

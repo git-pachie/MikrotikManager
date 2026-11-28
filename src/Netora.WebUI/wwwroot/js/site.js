@@ -4,7 +4,11 @@
 
   function sync() {
     var t = root.getAttribute('data-bs-theme');
-    buttons.forEach(function (b) { b.classList.toggle('selected', b.dataset.theme === t); });
+    buttons.forEach(function (b) {
+      var selected = b.dataset.theme === t;
+      b.classList.toggle('selected', selected);
+      b.setAttribute('aria-pressed', String(selected));
+    });
   }
 
   buttons.forEach(function (b) {

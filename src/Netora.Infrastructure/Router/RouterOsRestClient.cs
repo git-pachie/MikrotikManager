@@ -80,11 +80,36 @@ internal sealed partial class RouterOsRestClient(
 
     public async Task<RouterActiveSession?> FindActiveSessionAsync(string name, CancellationToken cancellationToken)
     {
-        var list = await SendAsync(HttpMethod.Get, "ppp/active?name=" + Uri.EscapeDataString(name), null, cancellationToken);
-        var first = list.ValueKind == JsonValueKind.Array ? list.EnumerateArray().FirstOrDefault() : default;
-        return first.ValueKind == JsonValueKind.Object
-            ? new RouterActiveSession(Str(first, "name") ?? name, Str(first, "address"), Str(first, "uptime"), Str(first, "caller-id"))
-            : null;
+        var sessions = await ReadSessionsAsync("&name=" + Uri.EscapeDataString(name), cancellationToken);
+        return sessions.FirstOrDefault(s => string.Equals(s.Name, name, StringComparison.Ordinal));
+    }
+
+    public Task<IReadOnlyList<RouterActiveSession>> ListActivePppoeSessionsAsync(CancellationToken cancellationToken)
+        => ReadSessionsAsync("", cancellationToken);
+
+    private async Task<IReadOnlyList<RouterActiveSession>> ReadSessionsAsync(string filter, CancellationToken cancellationToken)
+    {
+        const string properties = "ppp/active?service=pppoe&.proplist=.id,name,service,address,uptime,caller-id,session-id";
+        var list = await SendAsync(HttpMethod.Get, properties + filter, null, cancellationToken);
+        if (list.ValueKind != JsonValueKind.Array)
+            throw new RouterException(RouterErrorKind.Rejected, "The router returned an unexpected active session list.");
+
+        var sessions = new List<RouterActiveSession>();
+        foreach (var row in list.EnumerateArray())
+        {
+            if (row.ValueKind != JsonValueKind.Object || string.IsNullOrWhiteSpace(Str(row, "name")) || Str(row, "service") is null)
+                throw new RouterException(RouterErrorKind.Rejected, "The router returned an incomplete active session record.");
+            if (Str(row, "service") != "pppoe") continue;
+            sessions.Add(new(Str(row, "name")!, Str(row, "address"), Str(row, "uptime"), Str(row, "caller-id"),
+                Str(row, ".id"), Str(row, "session-id")));
+        }
+        return sessions;
+    }
+
+    public async Task DisconnectPppoeSessionAsync(string id, CancellationToken cancellationToken)
+    {
+        if (!IdPattern().IsMatch(id)) throw new RouterException(RouterErrorKind.Rejected, "The router session ID is invalid.");
+        await SendAsync(HttpMethod.Delete, $"ppp/active/{id}", null, cancellationToken);
     }
 
     public async Task<IReadOnlyList<RouterPppoeLog>> ReadPppoeLogsAsync(string name, CancellationToken cancellationToken)

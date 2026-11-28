@@ -24,7 +24,7 @@ Specs, approved mockups and module prompts are in `Netora-MikroTik-Manager-V2-Pr
 |---|---|---|
 | Sign-in | `/login` | Manager and Staff roles, login rate limits, account lockout, browser cookie session, and per-token API logout revocation |
 | Customers | `/customers`, `/customers/{id}`, `/customers/new`, `/customers/{id}/edit`, `/customers/{id}/delete` | Search, filters, sorting, details, add/edit, attachments, and Manager-only customer deletion after PPPoE removal. Manager-only customers are hidden from Staff, including in counts |
-| PPPoE | `/pppoe`, `/pppoe/{id}` | Accounts, encrypted passwords, on-demand router import, and Manager-only deletion from the router and PPPoE Management |
+| PPPoE | `/pppoe`, `/pppoe/{id}` | Accounts, live session status for Staff and Managers, encrypted passwords, and router import. Managers can disconnect a live session or delete an account |
 | Approvals | `/approvals`, `/approvals/{id}` | Create, Disable, Enable, Change Plan and Terminate requests; only Managers decide; approval emails |
 | Users and Settings | `/users`, `/settings` (Managers), `/profile` (everyone) | Add, edit, enable, disable, delete, and reset passwords. Router and email settings, profile, theme, and password |
 | MikroTik | `/settings`, `/approvals/{id}`, `/customers/{id}`, `/pppoe/import` | Approved router changes with Retry, customer router status and Configuration Mismatch, Test Connection, and Import. Managers select the router mode in Settings |
@@ -201,6 +201,7 @@ One event per line:
 - **New request:** every active Manager with an email address on their account is emailed. The requester is not.
 - **Decision:** the requester is emailed.
 - **New PPPoE account approved:** the active `admin` Manager receives the account name, installation address, mobile number, PPPoE username, password, and remote IP. Set the admin email address in User Management and enable approval emails with an SMTP TLS mode.
+- **PPPoE session disconnect:** after MikroTik confirms a Manager’s force disconnect, Netora records the action and emails active Managers when approval emails are enabled. The subscriber can reconnect using the existing account.
 - **PPPoE deletion:** after the router secret is removed or confirmed absent, all active Managers with email addresses receive a completion notice, including the Manager who performed the deletion.
 - **Recipients:** email addresses are sent in BCC. The new-account details are included in the admin email.
 - **Failures:** emails are sent in the background. A failed or unconfigured email is logged on the console (`ApprovalEmailFailed`, `ApprovalEmailSkipped`) and never changes the approval. A failed send also writes `EmailDeliveryFailed` (error type only) to the log file.

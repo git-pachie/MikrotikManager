@@ -41,7 +41,7 @@
     </div>
     <div class="module-fields">
         <label>Scan source<input readonly value="@(mock ? "Mock router" : mode == "RouterOS" ? Model.Router?.Name ?? Model.Router?.Address ?? "MikroTik" : "Mode unavailable")"></label>
-        <label>Duplicate Handling<select disabled><option>Skip existing usernames</option></select></label>
+        <label>Duplicate Handling<input value="Skip existing usernames" readonly></label>
     </div>
     @if (mock)
     {

@@ -20,7 +20,7 @@
     <form method="post" action="@action" class="module-actions">
         @Html.AntiForgeryToken()
         <input type="hidden" name="concurrencyStamp" value="@Model.ConcurrencyStamp">
-        <button type="submit" class="btn btn-danger text-bg-danger border-danger">Delete User</button>
+        <button type="submit" class="btn btn-danger">Delete User</button>
         <a class="btn btn-outline" href="/users">Cancel</a>
     </form>
 </section>

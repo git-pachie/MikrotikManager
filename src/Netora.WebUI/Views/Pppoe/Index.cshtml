@@ -31,8 +31,22 @@
 <section class="panel module-panel">
     <div class="module-head">
         <h2>PPPoE Accounts</h2>
-        <a class="btn btn-outline" href="/pppoe/import">Import Accounts</a>
+        <div class="heading-actions">
+            <a class="btn btn-outline" href="@($"{Context.Request.Path}{Context.Request.QueryString}")">Refresh Sessions</a>
+            @if (User.IsInRole("Manager"))
+            {
+                <a class="btn btn-outline" href="/pppoe/import">Import Accounts</a>
+            }
+        </div>
     </div>
+    @if (data.SessionRouterMode == "Mock")
+    {
+        <p class="module-note">Session status comes from the mock router.</p>
+    }
+    @if (data.Items.Count > 0 && data.Items.All(a => a.SessionConnected is null))
+    {
+        <p class="detail-alert" role="status">Session status is unavailable. Refresh Sessions to check the router again.</p>
+    }
     <form class="filters pppoe-filters" id="filters" method="get" action="/pppoe">
         @if (Model.SortBy is not null)
         {
@@ -40,7 +54,7 @@
             <input type="hidden" name="sortDir" value="@(Model.Descending ? "desc" : "asc")">
         }
         <div class="field">
-            <label for="search">&nbsp;</label>
+            <label for="search">Search accounts</label>
             <div class="search-wrap">
                 <svg class="icon"><use href="#icon-search" /></svg>
                 <input id="search" name="search" type="search" value="@Model.Search" maxlength="100" placeholder="Search by username, customer, or plan..." autocomplete="off">
@@ -60,6 +74,14 @@
                 }
             </select>
         </div>
+        <div class="field">
+            <label for="session">Session</label>
+            <select id="session" name="session">
+                <option value="" selected="@(Model.Session is null)">All sessions</option>
+                <option value="online" selected="@(Model.Session == "online")">Online</option>
+                <option value="offline" selected="@(Model.Session == "offline")">Offline</option>
+            </select>
+        </div>
         <button type="submit" class="btn btn-primary"><svg class="icon"><use href="#icon-search" /></svg>Search</button>
         <a href="/pppoe" class="btn"><svg class="icon"><use href="#refresh" /></svg>Reset</a>
     </form>
@@ -67,7 +89,8 @@
         <table class="customers-table all-table">
             <thead>
                 <tr>
-                    @foreach (var (column, label) in new[] { ("username", "Username"), ("customer", "Customer"), ("plan", "Profile"), ("state", "Secret"), ("requested", "Session") })
+                    <th scope="col" class="pppoe-session-column">Session</th>
+                    @foreach (var (column, label) in new[] { ("username", "Username"), ("customer", "Customer"), ("plan", "Profile"), ("state", "Secret") })
                     {
                         <th aria-sort="@Model.AriaSort(column)"><a class="th-sort" href="@Model.SortUrl(column)">@label<span class="sort-mark" aria-hidden="true">@(Model.SortBy == column ? (Model.Descending ? "▼" : "▲") : "")</span></a></th>
                     }
@@ -78,23 +101,34 @@
             <tbody>
                 @if (data.Items.Count == 0)
                 {
-                    <tr><td colspan="7" style="text-align:center;padding:28px">No matching PPPoE accounts found.</td></tr>
+                    <tr><td colspan="7" class="pppoe-list-empty" role="status">@(data.SessionFilterUnavailable
+                        ? "Session data is unavailable. Refresh Sessions to try again."
+                        : "No matching PPPoE accounts found.")</td></tr>
                 }
                 @foreach (var a in data.Items)
                 {
                     <tr>
+                        <td class="pppoe-session-column">
+                            <span class="pppoe-session-icon @PppoeLabels.SessionIcon(a.SessionConnected)" role="img"
+                                  aria-label="@PppoeLabels.Session(a.SessionConnected)" title="@PppoeLabels.Session(a.SessionConnected)">
+                                @if (a.SessionConnected is null)
+                                {
+                                    <span aria-hidden="true">—</span>
+                                }
+                                else
+                                {
+                                    <svg class="icon" aria-hidden="true"><use href="#wifi" /></svg>
+                                }
+                            </span>
+                        </td>
                         <td class="name">@a.PppoeUsername</td>
                         <td><a class="customer-link" href="/customers/@a.CustomerId">@a.CustomerName</a></td>
                         <td>@a.PlanName</td>
-                        <td><span class="pill @PppoeLabels.StatePill(a.AccountState)">@PppoeLabels.State(a.AccountState)</span></td>
                         <td>
+                            <span class="pill @PppoeLabels.StatePill(a.AccountState)">@PppoeLabels.State(a.AccountState)</span>
                             @if (a.PendingOperation is not null)
                             {
                                 <span class="pill pending">@PppoeLabels.Operation(a.PendingOperation) requested</span>
-                            }
-                            else
-                            {
-                                <span title="Live session data needs the router connection">Not checked</span>
                             }
                         </td>
                         <td><span class="pill unknown" title="Changes are sent to MikroTik once the router connection exists">@PppoeLabels.Router(a.RouterSyncStatus)</span></td>
@@ -102,7 +136,7 @@
                             <a class="btn btn-primary" href="/pppoe/@a.CustomerId">View</a>
                             @if (a.CanDelete)
                             {
-                                <a class="btn btn-outline" href="/pppoe/@a.CustomerId/delete" aria-label="Delete @a.PppoeUsername">Delete</a>
+                                <a class="btn btn-danger-outline" href="/pppoe/@a.CustomerId/delete" aria-label="Delete @a.PppoeUsername">Delete</a>
                             }
                         </td>
                     </tr>
@@ -115,8 +149,8 @@
         var last = Math.Min(data.Page * data.PageSize, data.TotalMatching);
     }
     <div class="pagination-bar">
-        <div>Showing @first to @last of @data.TotalMatching accounts</div>
-        <div class="pager" aria-label="Pagination">
+        <div>@(data.SessionFilterUnavailable ? "Session results unavailable" : $"Showing {first} to {last} of {data.TotalMatching} accounts")</div>
+        <nav class="pager" aria-label="Pagination">
             <button type="submit" form="filters" name="page" value="1" disabled="@(data.Page <= 1)" aria-label="First page">«</button>
             <button type="submit" form="filters" name="page" value="@(data.Page - 1)" disabled="@(data.Page <= 1)" aria-label="Previous page">‹</button>
             @for (var p = 1; p <= Model.TotalPages; p++)
@@ -125,7 +159,7 @@
             }
             <button type="submit" form="filters" name="page" value="@(data.Page + 1)" disabled="@(data.Page >= Model.TotalPages)" aria-label="Next page">›</button>
             <button type="submit" form="filters" name="page" value="@Model.TotalPages" disabled="@(data.Page >= Model.TotalPages)" aria-label="Last page">»</button>
-        </div>
+        </nav>
         <div class="rows-select">
             <label for="pageSize">Rows per page:</label>
             <select id="pageSize" name="pageSize" form="filters" data-autosubmit>
@@ -139,5 +173,5 @@
 </section>
 <section class="panel module-panel">
     <div class="module-head"><h2>Provisioning Rules</h2></div>
-    <p>An Active account must be disabled before its PPPoE details can change. Disabling and re-enabling need a Manager's approval; a Manager's own request is approved at once. Approved changes are saved here and marked <strong>Not sent</strong> until the MikroTik router connection is set up. Termination disables the PPPoE secret without deleting customer history.</p>
+    <p>Disable an enabled account before editing its PPPoE details. Disabling and re-enabling require Manager approval. Netora sends approved changes to MikroTik and displays the router result. Termination disables the PPPoE secret and preserves customer history.</p>
 </section>

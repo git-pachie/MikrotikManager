@@ -34,10 +34,6 @@
         {
             <a class="btn btn-primary" href="/plans/new">Add Internet Plan</a>
         }
-        else
-        {
-            <button type="button" class="btn btn-primary" disabled title="Only Managers can add plans.">Add Internet Plan</button>
-        }
     </div>
     @if (Model.Data.Items.Count == 0)
     {
@@ -89,7 +85,7 @@
                                 }
                                 else
                                 {
-                                    <button type="button" class="btn btn-primary" disabled title="Only Managers can edit plans.">Edit</button>
+                                    <span class="detail-secondary">View only</span>
                                 }
                             </td>
                         </tr>

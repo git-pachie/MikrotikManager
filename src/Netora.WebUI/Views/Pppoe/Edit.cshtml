@@ -22,7 +22,7 @@
     <div class="heading-actions">
         @if (d.CanDelete)
         {
-            <a class="btn btn-outline" href="/pppoe/@d.CustomerId/delete">Delete Account</a>
+            <a class="btn btn-danger-outline" href="/pppoe/@d.CustomerId/delete">Delete Account</a>
         }
         <a class="btn btn-outline" href="/pppoe">Back to PPPoE</a>
     </div>
@@ -39,6 +39,30 @@
 {
     <div class="form-alert" role="alert">@formError</div>
 }
+
+<section class="panel module-panel" aria-labelledby="pppoe-session-title">
+    <div class="module-head">
+        <h2 id="pppoe-session-title">PPPoE Session</h2>
+        <div class="detail-tags">
+            @if (d.Session?.RouterMode == "Mock")
+            {
+                <span class="pill pending">Mock router</span>
+            }
+            <span class="pill @PppoeLabels.SessionPill(d.Session?.Connected)">@PppoeLabels.Session(d.Session?.Connected)</span>
+        </div>
+    </div>
+    <div class="module-actions">
+        <a class="btn btn-outline" href="/pppoe/@d.CustomerId">Refresh Session</a>
+        @if (Model.IsManager && d.Session is { Connected: true, DisconnectReference: { } reference })
+        {
+            <form method="post" asp-controller="Pppoe" asp-action="Disconnect" asp-route-id="@d.CustomerId"
+                  data-confirm="Disconnect the current session for @d.PppoeUsername? The subscriber can reconnect.">
+                <input type="hidden" name="sessionReference" value="@reference">
+                <button type="submit" class="btn btn-danger-outline">Force Disconnect</button>
+            </form>
+        }
+    </div>
+</section>
 
 <section class="panel module-panel">
     <div class="module-head">
@@ -132,7 +156,7 @@
                   data-confirm="@(Model.IsManager ? "Terminate this account now? Its history is kept." : "Send a request to terminate this account?")">
                 <input type="hidden" name="operation" value="Terminate">
                 <label class="state-note">Reason (optional)<input name="reason" maxlength="500" placeholder="Why is the account ending?"></label>
-                <button type="submit" class="btn btn-outline">@(Model.IsManager ? "Terminate Account" : "Request Termination")</button>
+                <button type="submit" class="btn btn-danger-outline">@(Model.IsManager ? "Terminate Account" : "Request Termination")</button>
             </form>
             <p class="module-note">Termination keeps the customer, the PPPoE details and all history.@managerNote</p>
         }

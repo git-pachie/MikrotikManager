@@ -77,7 +77,30 @@ public sealed class FakeRouter : IRouterClient
     }
 
     public Task<RouterActiveSession?> FindActiveSessionAsync(string name, CancellationToken ct)
-        => Task.FromResult(Online.Contains(name) ? new RouterActiveSession(name, "10.0.0.9", "1h", null) : null);
+    {
+        Check();
+        return Task.FromResult(Online.Contains(name) ? ActiveSession(name) : null);
+    }
+
+    public int ActiveSessionReads { get; private set; }
+    public int Disconnects { get; private set; }
+    public Task<IReadOnlyList<RouterActiveSession>> ListActivePppoeSessionsAsync(CancellationToken ct)
+    {
+        Check();
+        ActiveSessionReads++;
+        return Task.FromResult<IReadOnlyList<RouterActiveSession>>(Online.Select(ActiveSession).ToList());
+    }
+
+    public Task DisconnectPppoeSessionAsync(string id, CancellationToken ct)
+    {
+        Check();
+        if (!Online.Remove(id)) throw new RouterException(RouterErrorKind.NotFound, "The PPPoE session has ended.");
+        Disconnects++;
+        return Task.CompletedTask;
+    }
+
+    private static RouterActiveSession ActiveSession(string name)
+        => new(name, "10.0.0.9", "1h", null, name, "session-" + name);
 
     public List<RouterPppProfile> Profiles { get; } = [new("*P0", "default", null)];
     public int ProfileWrites { get; private set; }

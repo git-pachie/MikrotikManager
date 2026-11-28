@@ -24,6 +24,8 @@ public sealed record ApprovalNotice(
 public sealed record ApprovedPppoeDetails(string Name, string? Address, string? Mobile,
     string Username, string ProtectedPassword, string? RemoteAddress);
 
+public sealed record PppoeDisconnectNotice(int CustomerId, string Username, string Actor, string RouterMode, DateTimeOffset OccurredAtUtc);
+
 /// <summary>
 /// Approval emails (08.03): Managers on a new request, the requester on a decision.
 /// Implementations queue the message and return at once. They must never throw, and a failed email
@@ -38,4 +40,5 @@ public interface IApprovalNotifier
     void PppoeDeleted(ApprovalNotice notice, string routerMode, string actor);
 
     void PppoeCreationApproved(ApprovalNotice notice, ApprovedPppoeDetails details);
+    void PppoeSessionDisconnected(PppoeDisconnectNotice notice);
 }
