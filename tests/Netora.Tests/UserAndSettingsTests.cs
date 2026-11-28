@@ -17,6 +17,7 @@ using Netora.Infrastructure.Audit;
 using Netora.Infrastructure.Approvals;
 using Netora.Infrastructure.Identity;
 using Netora.Infrastructure.Persistence;
+using Netora.Infrastructure.Router;
 using Netora.Infrastructure.Settings;
 using Netora.WebApi.Infrastructure;
 
@@ -47,6 +48,7 @@ public sealed class IdentityTestHost : IDisposable
             .AddEntityFrameworkStores<NetoraDbContext>();
         services.AddSingleton<IDataProtectionProvider>(new EphemeralDataProtectionProvider());
         services.Configure<EmailOptions>(configuration.GetSection(EmailOptions.SectionName));
+        services.Configure<RouterOptions>(configuration.GetSection(RouterOptions.SectionName));
         services.AddSingleton<IOptions<JwtOptions>>(Options.Create(new JwtOptions
         {
             Issuer = "test", Audience = "test", SigningKey = "0123456789abcdef0123456789abcdef0123456789", LifetimeMinutes = 60,
@@ -362,6 +364,85 @@ public class UserAndSettingsTests
         Assert.False((await Use<SettingsDto, ISettingsService>(h, s => s.GetAsync(default))).Router.PasswordSet);
     }
 
+    [Fact]
+    public async Task Router_password_from_an_old_key_ring_is_reported_and_can_be_replaced()
+    {
+        using var h = new IdentityTestHost();
+        var settings = new UpdateRouterSettingsRequest("Main", "192.168.88.1", 443, "netora-api", "replacement-password");
+        await Use<SettingsResult, ISettingsService>(h, s => s.UpdateRouterAsync(settings, "manager", default));
+        await using (var scope = h.Scope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<NetoraDbContext>();
+            var key = await db.AppSettings.SingleAsync(s => s.Key == AppSettingKeys.RouterPassword);
+            key.Value = new EphemeralDataProtectionProvider()
+                .CreateProtector(Netora.Infrastructure.Router.RouterConnectionProvider.PasswordPurpose).Protect("old-password");
+            await db.SaveChangesAsync();
+            var connection = new Netora.Infrastructure.Router.RouterConnectionProvider(db,
+                scope.ServiceProvider.GetRequiredService<IDataProtectionProvider>());
+            var error = await Assert.ThrowsAsync<Netora.Application.Router.RouterException>(() => connection.GetAsync(default));
+            Assert.Equal(Netora.Application.Router.RouterErrorKind.NotConfigured, error.Kind);
+            Assert.Contains("Re-enter the API password", error.Message);
+        }
+
+        var view = await Use<SettingsDto, ISettingsService>(h, s => s.GetAsync(default));
+        Assert.True(view.Router.PasswordUnreadable);
+        var rejected = await Use<SettingsResult, ISettingsService>(h, s => s.UpdateRouterAsync(
+            settings with { Mode = "RouterOS", NewPassword = null }, "manager", default));
+        Assert.Equal(SettingsOutcome.ValidationFailed, rejected.Outcome);
+        Assert.Contains(nameof(UpdateRouterSettingsRequest.NewPassword), rejected.Errors!.Keys);
+        Assert.Equal("Mock", (await Use<SettingsDto, ISettingsService>(h, s => s.GetAsync(default))).Router.Mode);
+
+        var saved = await Use<SettingsResult, ISettingsService>(h, s => s.UpdateRouterAsync(
+            settings with { Mode = "RouterOS" }, "manager", default));
+        Assert.Equal(SettingsOutcome.Ok, saved.Outcome);
+        var updated = (await Use<SettingsDto, ISettingsService>(h, s => s.GetAsync(default))).Router;
+        Assert.Equal("RouterOS", updated.Mode);
+        Assert.False(updated.PasswordUnreadable);
+    }
+
+    [Fact]
+    public async Task Saved_router_mode_is_loaded_for_the_next_request_and_invalidates_mock_test()
+    {
+        using var h = new IdentityTestHost(new() { ["Router:Mode"] = "Mock" });
+        await using (var scope = h.Scope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<NetoraDbContext>();
+            var tester = new RouterConnectionTester(db, new FakeRouter(),
+                scope.ServiceProvider.GetRequiredService<ISecurityEventWriter>(),
+                Microsoft.Extensions.Logging.Abstractions.NullLogger<RouterConnectionTester>.Instance);
+            Assert.True((await tester.TestAsync("manager", default)).Connected);
+        }
+
+        var before = (await Use<SettingsDto, ISettingsService>(h, s => s.GetAsync(default))).Router;
+        Assert.Equal("Mock", before.Mode);
+        Assert.Equal("Connected", before.ConnectionStatus);
+
+        var saved = await Use<SettingsResult, ISettingsService>(h, s => s.UpdateRouterAsync(
+            new UpdateRouterSettingsRequest("Main", "192.168.88.1", 443, "netora-api", "new-password", Mode: "RouterOS"),
+            "manager", default));
+        Assert.Equal(SettingsOutcome.Ok, saved.Outcome);
+
+        await using var next = h.Scope();
+        var selection = new RouterModeSelection(next.ServiceProvider.GetRequiredService<NetoraDbContext>(),
+            next.ServiceProvider.GetRequiredService<IOptions<RouterOptions>>());
+        var context = new DefaultHttpContext
+        {
+            User = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity("test")),
+        };
+        context.SetEndpoint(new Endpoint(_ => Task.CompletedTask, EndpointMetadataCollection.Empty, "router action"));
+        var middleware = new RouterModeMiddleware(_ =>
+        {
+            Assert.Equal("RouterOS", selection.Mode);
+            return Task.CompletedTask;
+        });
+        await middleware.InvokeAsync(context, selection);
+
+        var after = (await Use<SettingsDto, ISettingsService>(h, s => s.GetAsync(default))).Router;
+        Assert.Equal("RouterOS", after.Mode);
+        Assert.Equal("NotTested", after.ConnectionStatus);
+        Assert.Null(after.LastTestMessage);
+    }
+
     [Theory]
     [InlineData("http://192.168.88.1")]
     [InlineData("router/path")]
@@ -373,7 +454,7 @@ public class UserAndSettingsTests
     }
 
     [Fact]
-    public async Task Saved_email_settings_override_configuration_but_not_the_smtp_login()
+    public async Task Legacy_email_updates_keep_the_existing_smtp_configuration()
     {
         using var h = new IdentityTestHost(new Dictionary<string, string?>
         {
@@ -400,6 +481,87 @@ public class UserAndSettingsTests
         Assert.True(view.Email.SmtpLoginSet);
         Assert.Equal(1, view.Email.ManagerRecipients);
         Assert.Contains(view.Setup, c => c.Item == "Approval emails" && c.Done);
+    }
+
+    [Fact]
+    public async Task Managed_smtp_settings_need_no_user_secrets_and_store_the_password_encrypted()
+    {
+        using var h = new IdentityTestHost();
+        var smtp = new SmtpConfigurationRequest("smtp.example.test", 2465, "mail@example.test", "fixture-password",
+            false, SmtpSecurityMode.TlsOnConnect, 45, false);
+        var request = new UpdateEmailSettingsRequest(true, "sender@example.test", "Netora ISP", "https://netora.example.test", smtp);
+        var saved = await Use<SettingsResult, ISettingsService>(h, s => s.UpdateEmailAsync(request, "manager", default));
+        Assert.Equal(SettingsOutcome.Ok, saved.Outcome);
+
+        await using var scope = h.Scope();
+        var provider = scope.ServiceProvider.GetRequiredService<IEmailSettingsProvider>();
+        var effective = await provider.GetAsync(default);
+        Assert.Equal(("smtp.example.test", 2465, "mail@example.test", "fixture-password", 45, false),
+            (effective.Smtp.Host, effective.Smtp.Port, effective.Smtp.UserName, effective.Smtp.Password,
+                effective.Smtp.TimeoutSeconds, effective.Smtp.CheckCertificateRevocation));
+        Assert.Equal(MailKit.Security.SecureSocketOptions.SslOnConnect, effective.Smtp.SocketOptions);
+        Assert.Null(effective.NotReadyReason);
+        var dto = (await scope.ServiceProvider.GetRequiredService<ISettingsService>().GetAsync(default)).Email;
+        Assert.True(dto.SmtpPasswordSet);
+        Assert.Equal("mail@example.test", dto.SmtpUserName);
+        Assert.DoesNotContain("fixture-password", System.Text.Json.JsonSerializer.Serialize(dto));
+
+        var db = scope.ServiceProvider.GetRequiredService<NetoraDbContext>();
+        var stored = await db.AppSettings.SingleAsync(s => s.Key == AppSettingKeys.EmailSmtpPassword);
+        Assert.True(stored.IsProtected);
+        Assert.DoesNotContain("fixture-password", stored.Value);
+        var host = await db.AppSettings.SingleAsync(s => s.Key == AppSettingKeys.EmailSmtpHost);
+        host.Value = "different.example.test";
+        await db.SaveChangesAsync();
+        Assert.Null((await provider.GetAsync(default)).Smtp.Password);
+    }
+
+    [Fact]
+    public async Task A_blank_password_migrates_legacy_credentials_and_clearing_masks_the_fallback()
+    {
+        using var h = new IdentityTestHost(new Dictionary<string, string?>
+        {
+            ["Email:Smtp:Host"] = "smtp.example.test",
+            ["Email:Smtp:UserName"] = "mail@example.test",
+            ["Email:Smtp:Password"] = "legacy-password",
+        });
+        var smtp = new SmtpConfigurationRequest("smtp.example.test", 587, "mail@example.test", null,
+            false, SmtpSecurityMode.StartTls, 30, true);
+        var request = new UpdateEmailSettingsRequest(true, "sender@example.test", null, null, smtp);
+        var changedHost = await Use<SettingsResult, ISettingsService>(h, s => s.UpdateEmailAsync(
+            request with { Smtp = smtp with { Host = "other.example.test" } }, "manager", default));
+        Assert.Contains("Smtp.NewPassword", changedHost.Errors!.Keys);
+        Assert.Equal(SettingsOutcome.Ok, (await Use<SettingsResult, ISettingsService>(h,
+            s => s.UpdateEmailAsync(request, "manager", default))).Outcome);
+
+        await using (var scope = h.Scope())
+        {
+            var saved = await scope.ServiceProvider.GetRequiredService<NetoraDbContext>().AppSettings
+                .SingleAsync(s => s.Key == AppSettingKeys.EmailSmtpPassword);
+            Assert.True(saved.IsProtected);
+            Assert.NotEqual("legacy-password", saved.Value);
+            var effective = await scope.ServiceProvider.GetRequiredService<IEmailSettingsProvider>().GetAsync(default);
+            Assert.Equal("legacy-password", effective.Smtp.Password);
+        }
+
+        var removed = await Use<SettingsResult, ISettingsService>(h, s => s.UpdateEmailAsync(
+            request with { Enabled = false, Smtp = smtp with { ClearPassword = true } }, "manager", default));
+        Assert.Equal(SettingsOutcome.Ok, removed.Outcome);
+        await using var after = h.Scope();
+        Assert.Null((await after.ServiceProvider.GetRequiredService<IEmailSettingsProvider>().GetAsync(default)).Smtp.Password);
+    }
+
+    [Theory]
+    [InlineData("https://smtp.example.test", 587, SmtpSecurityMode.StartTls, "Smtp.Host")]
+    [InlineData("smtp.example.test", 0, SmtpSecurityMode.TlsOnConnect, "Smtp.Port")]
+    [InlineData("smtp.example.test", 25, SmtpSecurityMode.None, "Smtp.Security")]
+    public void Smtp_validation_rejects_invalid_hosts_ports_and_plaintext_logins(string host, int port,
+        SmtpSecurityMode security, string field)
+    {
+        var smtp = new SmtpConfigurationRequest(host, port, "mail@example.test", "fixture", false, security, 30, true);
+        var request = new UpdateEmailSettingsRequest(true, "sender@example.test", null, null, smtp);
+        var result = new UpdateEmailSettingsRequestValidator().Validate(request);
+        Assert.Contains(result.Errors, e => e.PropertyName == field);
     }
 
     [Fact]

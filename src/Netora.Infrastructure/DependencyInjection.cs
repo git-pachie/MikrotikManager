@@ -87,8 +87,11 @@ public static class DependencyInjection
         services.AddScoped<Netora.Application.Audit.IAuditQueries, Audit.AuditQueries>();
         services.AddScoped<Netora.Application.Operations.IOnuService, Operations.OnuService>();
         services.AddScoped<Netora.Application.Operations.IDashboardQueries, Operations.DashboardQueries>();
+        services.AddScoped<Netora.Application.Operations.IOperationsPages, Operations.OperationsPages>();
+        services.AddScoped<Netora.Application.Operations.IBackupManager, Operations.BackupManager>();
+        services.AddHostedService<Operations.BackupScheduler>();
 
-        // Router (module 09). Router:Mode must be set explicitly, so mock results can never pass for a real router.
+        // Router:Mode provides the startup default before a Manager saves a selection in Settings.
         var routerMode = configuration[$"{Router.RouterOptions.SectionName}:Mode"];
         if (!string.Equals(routerMode, Router.RouterOptions.MockMode, StringComparison.OrdinalIgnoreCase)
             && !string.Equals(routerMode, Router.RouterOptions.RouterOsMode, StringComparison.OrdinalIgnoreCase))
@@ -97,11 +100,12 @@ public static class DependencyInjection
                 "Router:Mode is not set. Set it to \"RouterOS\" to use the real MikroTik router, or \"Mock\" for the pretend router (appsettings.json).");
         }
         services.Configure<Router.RouterOptions>(configuration.GetSection(Router.RouterOptions.SectionName));
+        services.AddScoped<Router.RouterModeSelection>();
         services.AddScoped<Router.IRouterConnectionProvider, Router.RouterConnectionProvider>();
         services.AddScoped<Router.RouterOsRestClient>();
         services.AddSingleton<Router.MockRouterClient>();
         services.AddScoped<Netora.Application.Router.IRouterClient>(sp =>
-            string.Equals(routerMode, Router.RouterOptions.RouterOsMode, StringComparison.OrdinalIgnoreCase)
+            sp.GetRequiredService<Router.RouterModeSelection>().Mode == Router.RouterOptions.RouterOsMode
                 ? sp.GetRequiredService<Router.RouterOsRestClient>()
                 : sp.GetRequiredService<Router.MockRouterClient>());
         services.AddScoped<Netora.Application.Router.IRouterProvisioner, Router.RouterProvisioner>();

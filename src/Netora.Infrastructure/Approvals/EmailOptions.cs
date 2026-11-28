@@ -1,12 +1,12 @@
 using MailKit.Security;
+using Netora.Application.Settings;
 
 namespace Netora.Infrastructure.Approvals;
 
 /// <summary>
 /// SMTP settings for approval emails (08.03). Emails are sent only when <see cref="Enabled"/> is true and
 /// <see cref="SmtpOptions.Host"/> and <see cref="From"/> are set; otherwise notices are logged as skipped.
-/// <see cref="SmtpOptions.UserName"/> and <see cref="SmtpOptions.Password"/> are secrets: dotnet user-secrets or
-/// appsettings.Secrets.json, never the committed appsettings files.
+/// Settings saved by a Manager override legacy SMTP configuration.
 /// </summary>
 public sealed class EmailOptions
 {
@@ -26,9 +26,11 @@ public sealed class EmailOptions
     public string? AppBaseUrl { get; set; }
 
     /// <summary>Why emails cannot be sent, or null when they can.</summary>
-    public string? NotReadyReason =>
-        !Enabled ? "Disabled"
-        : string.IsNullOrWhiteSpace(Smtp.Host) || string.IsNullOrWhiteSpace(From) ? "NotConfigured"
+    public string? NotReadyReason => Enabled ? ConfigurationIssue : "Disabled";
+
+    public string? ConfigurationIssue =>
+        string.IsNullOrWhiteSpace(Smtp.Host) || string.IsNullOrWhiteSpace(From) ? "NotConfigured"
+        : !string.IsNullOrWhiteSpace(Smtp.UserName) && string.IsNullOrEmpty(Smtp.Password) ? "PasswordRequired"
         : null;
 }
 
@@ -58,7 +60,15 @@ public sealed class SmtpOptions
     /// </summary>
     public bool CheckCertificateRevocation { get; set; } = true;
 
-    public SecureSocketOptions SocketOptions => !UseSsl
-        ? SecureSocketOptions.None
-        : Port == 465 ? SecureSocketOptions.SslOnConnect : SecureSocketOptions.StartTls;
+    public SmtpSecurityMode? Security { get; set; }
+
+    public SmtpSecurityMode EffectiveSecurity => Security
+        ?? (!UseSsl ? SmtpSecurityMode.None : Port == 465 ? SmtpSecurityMode.TlsOnConnect : SmtpSecurityMode.StartTls);
+
+    public SecureSocketOptions SocketOptions => EffectiveSecurity switch
+    {
+        SmtpSecurityMode.None => SecureSocketOptions.None,
+        SmtpSecurityMode.TlsOnConnect => SecureSocketOptions.SslOnConnect,
+        _ => SecureSocketOptions.StartTls,
+    };
 }

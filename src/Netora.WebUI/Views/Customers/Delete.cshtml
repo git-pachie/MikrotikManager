@@ -1,0 +1,46 @@
+@model Netora.Application.Customers.CustomerDetailDto
+@{
+    ViewData["Title"] = "Delete Customer";
+    ViewData["Nav"] = "customers";
+}
+<div class="detail-breadcrumb">
+    <a href="/customers">Customers</a><span> / </span><a href="/customers/@Model.Id">@Model.DisplayId</a><span> / </span><strong>Delete Customer</strong>
+</div>
+<div class="heading">
+    <div class="heading-title">
+        <svg class="icon"><use href="#users" /></svg>
+        <div><h1>Delete Customer</h1><p>@Model.FirstName @Model.LastName · @Model.DisplayId</p></div>
+    </div>
+</div>
+@if (TempData[Netora.WebUI.Controllers.CustomersController.ErrorKey] is string error)
+{
+    <div class="form-alert" role="alert">@error</div>
+}
+<section class="panel module-panel">
+    @if (!Model.PppoeDeleted)
+    {
+        <div class="module-head"><h2>Delete PPPoE First</h2></div>
+        <p>Complete deletion of the PPPoE account before deleting this customer.</p>
+        <div class="module-actions">
+            @if (Model.CanDeletePppoe)
+            {
+                <a class="btn btn-primary" href="/pppoe/@Model.Id/delete?from=customer">Delete PPPoE Account</a>
+            }
+            else
+            {
+                <a class="btn btn-primary" href="/pppoe/@Model.Id">View PPPoE Deletion</a>
+            }
+            <a class="btn btn-outline" href="/customers/@Model.Id">Cancel</a>
+        </div>
+    }
+    else
+    {
+        <div class="module-head"><h2>Confirm Customer Deletion</h2></div>
+        <p>Netora checks the router again, then removes this customer from its operational screens. Audit history is retained.</p>
+        <form asp-controller="Customers" asp-action="Delete" asp-route-id="@Model.Id" method="post" class="module-actions">
+            <input type="hidden" name="concurrencyStamp" value="@Model.ConcurrencyStamp">
+            <button type="submit" class="btn btn-danger text-bg-danger border-danger">Delete Customer</button>
+            <a class="btn btn-outline" href="/customers/@Model.Id">Cancel</a>
+        </form>
+    }
+</section>

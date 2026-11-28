@@ -44,9 +44,14 @@ public class ApprovalsController(INetoraApiClient apiClient) : Controller
     }
 
     [HttpPost("/approvals/{id:long}/decision")]
-    public async Task<IActionResult> Decide(long id, bool approve, string? note, CancellationToken cancellationToken)
+    public async Task<IActionResult> Decide(long id, bool approve, string? note,
+        [Bind(Prefix = "creation")] CreatePppoeApprovalInput? creation, CancellationToken cancellationToken)
     {
-        var result = await apiClient.DecideApprovalAsync(id, new DecidePppoeRequest(approve, note), cancellationToken);
+        var settings = approve && creation?.ConcurrencyStamp is not null ? creation : null;
+        if (settings is not null && !ModelState.IsValid)
+            return await CreationErrorAsync(id, settings, note, "Check the profile and NAP box values.", cancellationToken);
+
+        var result = await apiClient.DecideApprovalAsync(id, new DecidePppoeRequest(approve, note, settings), cancellationToken);
         if (result.Error?.Code == "not_found") return NotFoundPage();
         if (result.Success && result.Data is { } r)
         {
@@ -62,8 +67,32 @@ public class ApprovalsController(INetoraApiClient apiClient) : Controller
         }
         else
         {
+            if (settings is not null && result.Error?.Code is "validation_failed" or "concurrency_conflict")
+            {
+                var error = result.Error.Details is { Count: > 0 } details
+                    ? string.Join(" ", details.Values.SelectMany(messages => messages)) : Message(result.Error);
+                return await CreationErrorAsync(id, settings, note, error, cancellationToken);
+            }
             TempData[CustomersController.ErrorKey] = "The decision was not saved. " + Message(result.Error);
         }
+        return Redirect($"/approvals/{id}");
+    }
+
+    private async Task<IActionResult> CreationErrorAsync(long id, CreatePppoeApprovalInput input,
+        string? note, string message, CancellationToken cancellationToken)
+    {
+        var current = await apiClient.GetApprovalAsync(id, cancellationToken);
+        if (current.Data is { Creation: { } options } detail)
+            return View("Details", new ApprovalDetailViewModel
+            {
+                Detail = detail,
+                IsManager = User.IsInRole("Manager"),
+                PostedCreation = options.ConcurrencyStamp == input.ConcurrencyStamp ? input with { NewPassword = null } : null,
+                DecisionNote = note,
+                CreationError = message,
+            });
+
+        TempData[CustomersController.ErrorKey] = message;
         return Redirect($"/approvals/{id}");
     }
 
@@ -74,7 +103,7 @@ public class ApprovalsController(INetoraApiClient apiClient) : Controller
         if (result.Error?.Code == "not_found") return NotFoundPage();
         if (result.Success && result.Data is { } r)
         {
-            if (r.Status == "Succeeded") TempData[CustomersController.ToastKey] = $"{ApprovalRequestId(id)} sent to the router (attempt {r.Attempts}).";
+            if (r.Status == "Succeeded") TempData[CustomersController.ToastKey] = $"{ApprovalRequestId(id)} completed on the router (attempt {r.Attempts}).";
             else if (r.Status == "Superseded") TempData[CustomersController.ToastKey] = $"{ApprovalRequestId(id)} was superseded by a later account change.";
             else TempData[CustomersController.ErrorKey] = $"{ApprovalRequestId(id)} failed on the router again (attempt {r.Attempts}): {r.Error}";
         }

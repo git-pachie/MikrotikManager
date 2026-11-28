@@ -2,6 +2,7 @@ using FluentValidation;
 using Microsoft.Extensions.Logging;
 using Netora.Application.Approvals;
 using Netora.Application.Pppoe;
+using Netora.Application.Router;
 using Netora.Domain.Approvals;
 using Netora.Domain.Customers;
 using Netora.Domain.Network;
@@ -14,8 +15,43 @@ internal sealed class CustomerCommands(
     IValidator<UpdateCustomerRequest> updateValidator,
     ICustomerRepository repository,
     IApprovalNotifier notifier,
+    IRouterClient router,
     ILogger<CustomerCommands> logger) : ICustomerCommands
 {
+    public async Task<DeleteCustomerOutcome> DeleteAsync(int id, DeleteCustomerRequest request, CustomerActor actor,
+        CancellationToken cancellationToken)
+    {
+        if (!actor.IsManager) return DeleteCustomerOutcome.Forbidden;
+        var customer = await repository.FindForUpdateAsync(id, includeManagerOnly: true, cancellationToken);
+        if (customer is null) return DeleteCustomerOutcome.NotFound;
+        if (customer.PppoeDeletedAtUtc is null) return DeleteCustomerOutcome.PppoeDeletionRequired;
+        if (!string.Equals(customer.ConcurrencyStamp, request.ConcurrencyStamp, StringComparison.Ordinal))
+            return DeleteCustomerOutcome.Conflict;
+
+        try
+        {
+            var marker = RouterRules.Marker(id);
+            var secrets = await router.ListSecretsAsync(cancellationToken, includePasswords: false);
+            if (secrets.Any(s => string.Equals(s.Name, customer.PppoeUsername, StringComparison.OrdinalIgnoreCase)
+                || s.Comment?.Contains(marker, StringComparison.Ordinal) == true))
+                return DeleteCustomerOutcome.PppoeExistsOnRouter;
+        }
+        catch (RouterException ex)
+        {
+            logger.LogWarning("CustomerDeletionRouterCheckFailed CustomerId={CustomerId} Kind={Kind}", id, ex.Kind);
+            return DeleteCustomerOutcome.RouterUnavailable;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        customer.DeletedAtUtc = now;
+        customer.UpdatedAtUtc = now;
+        customer.UpdatedByUserId = actor.UserId;
+        var activity = NewActivity(actor, "CustomerDeleted", null, now, id);
+        return await repository.UpdateAsync(customer, request.ConcurrencyStamp, activity, cancellationToken) == CustomerSaveResult.Saved
+            ? DeleteCustomerOutcome.Deleted
+            : DeleteCustomerOutcome.Conflict;
+    }
+
     public async Task<CreateCustomerResult> CreateAsync(CreateCustomerRequest request, CustomerActor actor,
         CancellationToken cancellationToken)
     {

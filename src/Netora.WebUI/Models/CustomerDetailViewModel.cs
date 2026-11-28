@@ -13,6 +13,16 @@ public sealed class CustomerDetailViewModel
 
     public string? ErrorMessage { get; init; }
 
+    public string LocalIp => DisplayIp(Router?.Addresses?.Local, Router?.Addresses?.LocalFromProfile == true, Data?.PppoeLocalAddress);
+
+    public string RemoteIp => DisplayIp(Router?.Addresses?.Remote, Router?.Addresses?.RemoteFromProfile == true, Data?.PppoeRemoteAddress);
+
+    private static string DisplayIp(string? routerAddress, bool fromProfile, string? savedAddress)
+    {
+        if (!string.IsNullOrWhiteSpace(routerAddress)) return fromProfile ? $"{routerAddress} (profile)" : routerAddress;
+        return string.IsNullOrWhiteSpace(savedAddress) ? "—" : $"{savedAddress} (saved)";
+    }
+
     public string FullName => Data is null ? string.Empty : $"{Data.FirstName} {Data.LastName}";
 
     public string Initials => Data is null

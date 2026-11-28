@@ -5,6 +5,8 @@ using Netora.Application.Pppoe;
 
 namespace Netora.WebUI.Models;
 
+public sealed record PppoePasswordViewModel(int CustomerId, bool PasswordSet);
+
 public sealed class PppoeListViewModel
 {
     public string? Search { get; init; }
@@ -103,6 +105,7 @@ public static class PppoeLabels
         "Enabled" => "active",
         "Disabled" => "disabled",
         "Terminated" => "terminated",
+        "Deleted" => "terminated",
         _ => "unknown",
     };
 
@@ -120,6 +123,7 @@ public static class PppoeLabels
         "CreatePppoe" => "Create",
         "ChangePlan" => "Change Plan",
         "TerminatePppoe" => "Terminate",
+        "DeletePppoe" => "Delete PPPoE",
         _ => operation ?? string.Empty,
     };
 
@@ -130,6 +134,7 @@ public static class PppoeLabels
 public sealed record PppoeImportViewModel
 {
     public bool IsManager { get; init; }
+    public Netora.Application.Settings.RouterSettingsDto? Router { get; init; }
     public Netora.Application.Router.ImportScanDto? Scan { get; init; }
     public string? Error { get; init; }
 }

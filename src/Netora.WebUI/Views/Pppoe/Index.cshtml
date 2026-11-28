@@ -15,6 +15,10 @@
     </div>
     <div class="heading-actions"><a class="btn btn-outline" href="/customers">Customers</a></div>
 </div>
+@if (TempData[Netora.WebUI.Controllers.CustomersController.ToastKey] is string toast)
+{
+    <div class="form-success" role="status">@toast</div>
+}
 @if (TempData[Netora.WebUI.Controllers.CustomersController.ErrorKey] is string error)
 {
     <div class="form-alert" role="alert">@error</div>
@@ -94,7 +98,13 @@
                             }
                         </td>
                         <td><span class="pill unknown" title="Changes are sent to MikroTik once the router connection exists">@PppoeLabels.Router(a.RouterSyncStatus)</span></td>
-                        <td><a class="btn btn-primary" href="/pppoe/@a.CustomerId">View</a></td>
+                        <td>
+                            <a class="btn btn-primary" href="/pppoe/@a.CustomerId">View</a>
+                            @if (a.CanDelete)
+                            {
+                                <a class="btn btn-outline" href="/pppoe/@a.CustomerId/delete" aria-label="Delete @a.PppoeUsername">Delete</a>
+                            }
+                        </td>
                     </tr>
                 }
             </tbody>

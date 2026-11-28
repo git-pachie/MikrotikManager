@@ -15,7 +15,7 @@ namespace Netora.Infrastructure.Router;
 
 /// <summary>
 /// RouterOS 7 REST API over HTTPS (09.01): GET reads, PUT creates, PATCH updates a record by ".id". All values are
-/// strings in RouterOS JSON. Nothing is ever deleted. The server certificate must be trusted by Windows, or match the
+/// strings in RouterOS JSON. The server certificate must be trusted by the host, or match the
 /// SHA-256 fingerprint saved in Settings (for a router with a self-signed certificate).
 /// </summary>
 internal sealed partial class RouterOsRestClient(
@@ -32,10 +32,16 @@ internal sealed partial class RouterOsRestClient(
         return new RouterIdentity(Str(identity, "name") ?? "(no name)", Str(resource, "version"), Str(resource, "board-name"));
     }
 
-    public async Task<IReadOnlyList<RouterSecret>> ListSecretsAsync(CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<RouterSecret>> ListSecretsAsync(CancellationToken cancellationToken, bool includePasswords = true)
     {
-        var list = await SendAsync(HttpMethod.Get, "ppp/secret", null, cancellationToken);
-        return list.ValueKind == JsonValueKind.Array ? list.EnumerateArray().Select(ToSecret).ToList() : [];
+        var path = includePasswords ? "ppp/secret" : "ppp/secret?.proplist=.id,name,comment";
+        var list = await SendAsync(HttpMethod.Get, path, null, cancellationToken);
+        if (list.ValueKind != JsonValueKind.Array)
+            throw new RouterException(RouterErrorKind.Rejected, "The router returned an unexpected PPP secret list.");
+        var rows = list.EnumerateArray().Select(ToSecret).ToList();
+        if (!includePasswords && rows.Any(s => string.IsNullOrWhiteSpace(s.Name)))
+            throw new RouterException(RouterErrorKind.Rejected, "The router returned an incomplete PPP secret list.");
+        return rows;
     }
 
     public async Task<RouterSecret?> FindSecretAsync(string? id, string name, CancellationToken cancellationToken)
@@ -52,7 +58,9 @@ internal sealed partial class RouterOsRestClient(
             }
         }
         var byName = await SendAsync(HttpMethod.Get, "ppp/secret?name=" + Uri.EscapeDataString(name), null, cancellationToken);
-        return byName.ValueKind == JsonValueKind.Array ? byName.EnumerateArray().Select(ToSecret).FirstOrDefault() : null;
+        if (byName.ValueKind != JsonValueKind.Array)
+            throw new RouterException(RouterErrorKind.Rejected, "The router returned an unexpected PPP secret response.");
+        return byName.EnumerateArray().Select(ToSecret).FirstOrDefault();
     }
 
     public async Task<RouterSecret> CreateSecretAsync(RouterSecretWrite secret, CancellationToken cancellationToken)
@@ -62,6 +70,12 @@ internal sealed partial class RouterOsRestClient(
     {
         if (!IdPattern().IsMatch(id)) throw new RouterException(RouterErrorKind.Rejected, "The stored router ID is not valid.");
         return ToSecret(await SendAsync(HttpMethod.Patch, $"ppp/secret/{id}", Body(secret, creating: false), cancellationToken));
+    }
+
+    public async Task DeleteSecretAsync(string id, CancellationToken cancellationToken)
+    {
+        if (!IdPattern().IsMatch(id)) throw new RouterException(RouterErrorKind.Rejected, "The stored router ID is not valid.");
+        await SendAsync(HttpMethod.Delete, $"ppp/secret/{id}", null, cancellationToken);
     }
 
     public async Task<RouterActiveSession?> FindActiveSessionAsync(string name, CancellationToken cancellationToken)
@@ -126,7 +140,8 @@ internal sealed partial class RouterOsRestClient(
     }
 
     private static RouterPppProfile ToProfile(JsonElement e)
-        => new(Str(e, ".id") ?? string.Empty, Str(e, "name") ?? string.Empty, Str(e, "rate-limit"));
+        => new(Str(e, ".id") ?? string.Empty, Str(e, "name") ?? string.Empty, Str(e, "rate-limit"),
+            Str(e, "local-address"), Str(e, "remote-address"));
 
     private static Dictionary<string, string> Body(RouterSecretWrite s, bool creating)
     {
@@ -149,13 +164,17 @@ internal sealed partial class RouterOsRestClient(
         var c = await connections.GetAsync(cancellationToken)
                 ?? throw new RouterException(RouterErrorKind.NotConfigured, "The router address, user name or password is not set in Settings.");
 
+        var certificateRejected = false;
         using var handler = new HttpClientHandler
         {
             ServerCertificateCustomValidationCallback = (_, cert, _, errors) =>
-                c.CertificateThumbprint is null
+            {
+                var trusted = c.CertificateThumbprint is null
                     ? errors == SslPolicyErrors.None
-                    // Pinned: only this exact certificate is accepted (typical for a router's self-signed certificate).
-                    : cert is not null && string.Equals(cert.GetCertHashString(HashAlgorithmName.SHA256), c.CertificateThumbprint, StringComparison.OrdinalIgnoreCase),
+                    : cert is not null && string.Equals(cert.GetCertHashString(HashAlgorithmName.SHA256), c.CertificateThumbprint, StringComparison.OrdinalIgnoreCase);
+                certificateRejected = !trusted;
+                return trusted;
+            },
         };
         using var http = new HttpClient(handler)
         {
@@ -176,10 +195,16 @@ internal sealed partial class RouterOsRestClient(
         {
             response = await http.SendAsync(request, cancellationToken);
         }
-        catch (HttpRequestException ex) when (ex.InnerException is AuthenticationException)
+        catch (HttpRequestException ex) when (certificateRejected)
         {
             throw new RouterException(RouterErrorKind.Certificate,
                 "The router's HTTPS certificate is not trusted. Install a trusted certificate on the router, or enter its SHA-256 fingerprint in Settings.", ex);
+        }
+        catch (HttpRequestException ex) when (ex.HttpRequestError == HttpRequestError.SecureConnectionError
+                                              || ex.InnerException is AuthenticationException)
+        {
+            throw new RouterException(RouterErrorKind.Unreachable,
+                $"HTTPS negotiation with the router at {c.Address}:{c.Port} failed. Check that RouterOS www-ssl is enabled on this port and allows the Netora server.", ex);
         }
         catch (HttpRequestException ex)
         {

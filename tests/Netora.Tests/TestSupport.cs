@@ -18,6 +18,8 @@ public sealed class RecordingNotifier : Netora.Application.Approvals.IApprovalNo
 {
     public List<Netora.Application.Approvals.ApprovalNotice> Submitted { get; } = [];
     public List<Netora.Application.Approvals.ApprovalNotice> Decided { get; } = [];
+    public List<Netora.Application.Approvals.ApprovalNotice> Deletions { get; } = [];
+    public List<Netora.Application.Approvals.ApprovedPppoeDetails> Creations { get; } = [];
     public bool Throw { get; set; }
 
     public void RequestSubmitted(Netora.Application.Approvals.ApprovalNotice notice)
@@ -31,6 +33,11 @@ public sealed class RecordingNotifier : Netora.Application.Approvals.IApprovalNo
         if (Throw) throw new InvalidOperationException("SMTP down");
         Decided.Add(notice);
     }
+
+    public void PppoeDeleted(Netora.Application.Approvals.ApprovalNotice notice, string routerMode, string actor) => Deletions.Add(notice);
+
+    public void PppoeCreationApproved(Netora.Application.Approvals.ApprovalNotice notice,
+        Netora.Application.Approvals.ApprovedPppoeDetails details) => Creations.Add(details);
 }
 
 public sealed class RecordingProvisioner : Netora.Application.Router.IRouterProvisioner
@@ -87,21 +94,25 @@ public sealed class TestDb : IDisposable
 
     /// <summary>Approval notices sent by the commands built from this database.</summary>
     public RecordingNotifier Notifier { get; } = new();
+    internal Netora.Infrastructure.Pppoe.PppoePasswordProtector Passwords { get; } =
+        new(new Microsoft.AspNetCore.DataProtection.EphemeralDataProtectionProvider());
 
-    internal CustomerCommands Commands(NetoraDbContext db) => new(
+    internal CustomerCommands Commands(NetoraDbContext db, FakeRouter? router = null) => new(
         new CreateCustomerRequestValidator(),
         new UpdateCustomerRequestValidator(),
         new CustomerRepository(db),
         Notifier,
+        router ?? new FakeRouter(),
         NullLogger<CustomerCommands>.Instance);
 
-    internal Netora.Application.Pppoe.PppoeCommands PppoeCommands(NetoraDbContext db) => new(
+    internal Netora.Application.Pppoe.PppoeCommands PppoeCommands(NetoraDbContext db,
+        Netora.Application.Router.IRouterProvisioner? provisioner = null) => new(
         new Netora.Application.Pppoe.UpdatePppoeRequestValidator(),
         new CustomerRepository(db),
         new Netora.Infrastructure.Pppoe.ApprovalRepository(db),
-        new Netora.Infrastructure.Pppoe.PppoePasswordProtector(new Microsoft.AspNetCore.DataProtection.EphemeralDataProtectionProvider()),
+        Passwords,
         Notifier,
-        Provisioner,
+        provisioner ?? Provisioner,
         NullLogger<Netora.Application.Pppoe.PppoeCommands>.Instance);
 
     /// <summary>Router stand-in for the approval tests: records the calls and leaves requests "NotSent".</summary>

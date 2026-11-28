@@ -7,13 +7,13 @@ namespace Netora.Application.Settings;
 /// Connecting and testing come with module 09.
 /// </summary>
 /// <param name="ConnectionStatus">NotTested, Connected or Failed: the result of the last Test Connection.</param>
-/// <param name="Mode">"Mock" or "RouterOS" (Router:Mode in configuration).</param>
+/// <param name="Mode">Effective mode, "Mock" or "RouterOS".</param>
 public sealed record RouterSettingsDto(string? Name, string? Address, int Port, string? UserName, bool PasswordSet, string ConnectionStatus,
-    string Mode = "Mock", string? CertificateThumbprint = null, DateTimeOffset? LastTestedAtUtc = null, string? LastTestMessage = null);
+    string Mode = "Mock", string? CertificateThumbprint = null, DateTimeOffset? LastTestedAtUtc = null, string? LastTestMessage = null,
+    bool PasswordUnreadable = false);
 
 /// <summary>
-/// Email notification settings. Enabled, sender and links are edited on the Settings page; the SMTP server and login
-/// stay in configuration (login in user-secrets or appsettings.Secrets.json) and are shown read-only.
+/// Email notification settings. The password is write-only.
 /// </summary>
 public sealed record EmailSettingsDto(
     bool Enabled,
@@ -26,7 +26,11 @@ public sealed record EmailSettingsDto(
     bool SmtpLoginSet,
     bool CheckCertificateRevocation,
     int ManagerRecipients,
-    string? NotReadyReason);
+    string? NotReadyReason,
+    string? SmtpUserName = null,
+    bool SmtpPasswordSet = false,
+    SmtpSecurityMode SmtpSecurity = SmtpSecurityMode.StartTls,
+    int SmtpTimeoutSeconds = 30);
 
 public sealed record SetupCheckDto(string Item, bool Done, string Detail);
 
@@ -35,7 +39,7 @@ public sealed record SettingsDto(RouterSettingsDto Router, EmailSettingsDto Emai
 /// <param name="NewPassword">Leave empty to keep the stored password.</param>
 /// <param name="CertificateThumbprint">Optional SHA-256 fingerprint of the router's HTTPS certificate (for a self-signed certificate).</param>
 public sealed record UpdateRouterSettingsRequest(string? Name, string? Address, int Port, string? UserName, string? NewPassword, bool ClearPassword = false,
-    string? CertificateThumbprint = null)
+    string? CertificateThumbprint = null, string? Mode = null)
 {
     /// <summary>Upper-case hex without separators, or null.</summary>
     public static string? NormalizeThumbprint(string? value)
@@ -46,7 +50,13 @@ public sealed record UpdateRouterSettingsRequest(string? Name, string? Address, 
     }
 }
 
-public sealed record UpdateEmailSettingsRequest(bool Enabled, string? From, string? FromName, string? AppBaseUrl);
+public enum SmtpSecurityMode { StartTls, TlsOnConnect, None }
+
+public sealed record SmtpConfigurationRequest(string? Host, int Port, string? UserName, string? NewPassword,
+    bool ClearPassword, SmtpSecurityMode Security, int TimeoutSeconds, bool CheckCertificateRevocation);
+
+public sealed record UpdateEmailSettingsRequest(bool Enabled, string? From, string? FromName, string? AppBaseUrl,
+    SmtpConfigurationRequest? Smtp = null);
 
 public sealed record TestEmailResultDto(bool Sent, string Recipient, string Message);
 
@@ -104,8 +114,33 @@ public sealed class UpdateEmailSettingsRequestValidator : AbstractValidator<Upda
         RuleFor(x => x.From).NotEmpty().WithName("SMTP Sender").WithMessage("Enter the sender address before turning emails on.")
             .When(x => x.Enabled);
         RuleFor(x => x.FromName).MaximumLength(100).Must(v => v is null || !v.Any(char.IsControl)).WithMessage("Sender name must be on one line.");
-        RuleFor(x => x.AppBaseUrl).Must(v => Uri.TryCreate(v, UriKind.Absolute, out var u) && (u.Scheme == "https" || u.Scheme == "http"))
+        RuleFor(x => x.AppBaseUrl).MaximumLength(300)
+            .Must(v => Uri.TryCreate(v, UriKind.Absolute, out var u) && (u.Scheme == "https" || u.Scheme == "http"))
             .WithMessage("Enter a full address such as https://netora.example/, or leave it empty.")
             .When(x => !string.IsNullOrWhiteSpace(x.AppBaseUrl));
+        RuleFor(x => x.Smtp!).SetValidator(new SmtpConfigurationRequestValidator()).When(x => x.Smtp is not null);
     }
+}
+
+internal sealed class SmtpConfigurationRequestValidator : AbstractValidator<SmtpConfigurationRequest>
+{
+    public SmtpConfigurationRequestValidator()
+    {
+        RuleFor(x => x.Host).MaximumLength(253)
+            .Must(h => string.IsNullOrWhiteSpace(h) || Uri.CheckHostName(h.Trim()) != UriHostNameType.Unknown)
+            .WithMessage("Enter a host name or IP address without a scheme, port, or path.");
+        RuleFor(x => x.Port).InclusiveBetween(1, 65535);
+        RuleFor(x => x.UserName).MaximumLength(256).Must(OneLine).WithMessage("Enter the SMTP login on one line.");
+        RuleFor(x => x.NewPassword).MaximumLength(256).Must(OneLine).WithMessage("Enter the SMTP password on one line.");
+        RuleFor(x => x.NewPassword).Empty().WithMessage("Choose either a replacement password or password removal.")
+            .When(x => x.ClearPassword);
+        RuleFor(x => x.UserName).NotEmpty().WithMessage("Enter an SMTP login to use this password.")
+            .When(x => !string.IsNullOrEmpty(x.NewPassword));
+        RuleFor(x => x.Security).IsInEnum();
+        RuleFor(x => x.Security).NotEqual(SmtpSecurityMode.None).WithMessage("Choose a TLS mode for an authenticated SMTP login.")
+            .When(x => !string.IsNullOrWhiteSpace(x.UserName));
+        RuleFor(x => x.TimeoutSeconds).InclusiveBetween(5, 120);
+    }
+
+    private static bool OneLine(string? value) => value is null || !value.Any(char.IsControl);
 }

@@ -11,7 +11,7 @@ Write plain-text log files, one file per calendar date. File name pattern: `neto
 |---|---|
 | Authentication | login success, login failed (with reason class), logout, lockout, password reset requested and completed |
 | Customers | created, updated (changed field names), deleted or terminated, viewed by Manager-only rule denial |
-| PPPoE | account created, suspended, reactivated, plan changed, terminated, import started and completed |
+| PPPoE | account created, suspended, reactivated, plan changed, terminated, deleted (`AccountDeleted`), import started and completed |
 | Approvals | request submitted, approved, rejected, provisioning succeeded, provisioning failed, retry attempted |
 | NAP / ONU / Plans | created, updated, deactivated, ONU replaced |
 | Users and settings | user created, role changed, enabled, disabled, settings changed (names only, never values) |

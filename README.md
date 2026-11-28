@@ -23,11 +23,11 @@ Specs, approved mockups and module prompts are in `Netora-MikroTik-Manager-V2-Pr
 | Area | Pages | Notes |
 |---|---|---|
 | Sign-in | `/login` | Manager and Staff roles, login rate limits, account lockout, browser cookie session, and per-token API logout revocation |
-| Customers | `/customers`, `/customers/{id}`, `/customers/new`, `/customers/{id}/edit` | Search, filters, sorting, paging, details, add/edit, attachments (JPG, PNG, PDF up to 10 MB). Manager-only customers are hidden from Staff, including in counts |
-| PPPoE | `/pppoe`, `/pppoe/{id}` | Accounts, encrypted passwords, and on-demand router import |
+| Customers | `/customers`, `/customers/{id}`, `/customers/new`, `/customers/{id}/edit`, `/customers/{id}/delete` | Search, filters, sorting, details, add/edit, attachments, and Manager-only customer deletion after PPPoE removal. Manager-only customers are hidden from Staff, including in counts |
+| PPPoE | `/pppoe`, `/pppoe/{id}` | Accounts, encrypted passwords, on-demand router import, and Manager-only deletion from the router and PPPoE Management |
 | Approvals | `/approvals`, `/approvals/{id}` | Create, Disable, Enable, Change Plan and Terminate requests; only Managers decide; approval emails |
 | Users and Settings | `/users`, `/settings` (Managers), `/profile` (everyone) | Add, edit, enable, disable, delete, and reset passwords. Router and email settings, profile, theme, and password |
-| MikroTik | `/settings`, `/approvals/{id}`, `/customers/{id}`, `/pppoe/import` | Approved changes sent to the router with Retry, live status and Configuration Mismatch on the customer profile, Test Connection, Import. Uses a mock router until `Router:Mode` is `RouterOS` |
+| MikroTik | `/settings`, `/approvals/{id}`, `/customers/{id}`, `/pppoe/import` | Approved router changes with Retry, customer router status and Configuration Mismatch, Test Connection, and Import. Managers select the router mode in Settings |
 | Audit Trail | `/audit` (Managers) | Sign-ins, user and settings changes, customer and PPPoE changes, approval steps with router results, plan and NAP changes; filters by date, category, actor and text. Backups are not built yet |
 | Internet Plans | `/plans`, `/plans/new`, `/plans/{id}/edit` | Plan catalogue with fee, speeds and the MikroTik PPP profile each plan maps to; Check Router Profiles. Managers add, edit and deactivate; Staff view |
 | NAP Boxes | `/nap-boxes`, `/nap-boxes/new`, `/nap-boxes/{id}` | NAP list with customer counts, details with assigned customers, move customers between NAP boxes, UNKNOWN review. Managers add and edit; Staff view and move |
@@ -35,8 +35,9 @@ Specs, approved mockups and module prompts are in `Netora-MikroTik-Manager-V2-Pr
 | ONU History | `/onu-history` | Current devices and replacement history with date, reason, and operator |
 | Diagnostics | `/diagnostics` | On-demand PPPoE session, available RouterOS log events, and configuration mismatch checks |
 | Dashboard | `/dashboard` | Role-filtered subscriber totals, pending approvals, recent activity, and live router health |
-
-Reports, Backups, and Notifications remain planned.
+| Reports | `/reports` | Role-filtered customer status, NAP, internet plan, and provisioning summaries with CSV export |
+| Notifications | `/notifications` | Approval decisions, provisioning outcomes, and recorded approval-email delivery status |
+| Backups | `/backups` (Managers) | SQL Server history, backup directory, manual runs, and an optional daily schedule |
 
 ## Prerequisites
 
@@ -68,9 +69,6 @@ dotnet user-secrets set "Jwt:SigningKey" "<random string of 32+ characters>" --p
 dotnet user-secrets set "Bootstrap:ManagerUserName" "<name>" --project src/Netora.WebApi
 dotnet user-secrets set "Bootstrap:ManagerPassword" "<password, 10+ chars with upper, lower, digit and symbol>" --project src/Netora.WebApi
 
-# SMTP login for approval emails (optional; nothing is sent until Email:Enabled is true)
-dotnet user-secrets set "Email:Smtp:UserName" "<smtp user name>" --project src/Netora.WebApi
-dotnet user-secrets set "Email:Smtp:Password" "<smtp password>" --project src/Netora.WebApi
 ```
 
 Useful commands:
@@ -143,19 +141,11 @@ Non-secret settings live in `appsettings.json`, with overrides in `appsettings.D
 | `Swagger:Enabled` | `true` in Development, `false` elsewhere | When `false`, `/swagger` returns 404 |
 | `Attachments:StoragePath` | `App_Data/attachments` | Folder for customer attachments, outside any web root. Empty in Production settings, so it must be set there |
 | `Attachments:MaxFileSizeBytes` | `10485760` (10 MB) | Upload limit |
-| `DataProtection:KeysPath` | `App_Data/keys` | Keys that encrypt stored PPPoE passwords. Empty in Production settings, so it must be set there. Back it up with the database: without these keys the stored passwords cannot be decrypted |
-| `Email:Enabled` | `false` | Turns approval emails on or off. When `false`, nothing is sent and each skipped email is logged with `Reason=Disabled` |
-| `Email:Smtp:Host`, `Email:Smtp:Port` | `smtp.gmail.com`, `587` | SMTP server. Emails are also skipped (`Reason=NotConfigured`) while Host or From is empty |
-| `Email:Smtp:UseSsl` | `true` | `true`: always encrypted. Port 465 uses SSL from the start, any other port (587) uses STARTTLS, and sending fails if the server cannot encrypt. `false`: no encryption, only for an internal mail relay |
-| `Email:Smtp:UserName`, `Email:Smtp:Password` | none | **Secret.** SMTP login |
-| `Email:Smtp:TimeoutSeconds` | `30` | SMTP timeout |
-| `Email:Smtp:CheckCertificateRevocation` | `true` | Set `false` only on a PC where antivirus email scanning (for example AVG Mail Shield) replaces the server certificate; trust and host name are still checked |
-| `Email:From`, `Email:FromName` | empty, `Netora` | Sender of approval emails |
-| `Email:AppBaseUrl` | empty | Optional public WebUI address for links in emails, for example `https://netora.example/` |
+| `DataProtection:KeysPath` | `App_Data/keys` | Keys that protect stored PPPoE, router, and SMTP passwords. Empty in Production settings, so it must be set there. Back it up with the database: without these keys the stored passwords cannot be decrypted |
 
 `App_Data/` is git-ignored.
 
-| `Router:Mode` | `Mock` (empty in Production) | `Mock` = a pretend router for development, `RouterOS` = the real MikroTik over the RouterOS 7 REST API. Required: the API does not start while it is empty |
+| `Router:Mode` | `Mock` (empty in Production) | Required startup default. A Manager's mode selection in Settings takes precedence once saved |
 | `Router:TimeoutSeconds` | `10` | Timeout per router call |
 | `Router:Mock:StatePath` | `App_Data/mock-router.json` | Where the mock keeps its secrets. Delete the file to reset the mock (it reseeds from the customers) |
 | `Router:Mock:FailWrites` | `false` | Makes every mock change fail, to try failures and Retry |
@@ -210,32 +200,22 @@ One event per line:
 
 - **New request:** every active Manager with an email address on their account is emailed. The requester is not.
 - **Decision:** the requester is emailed.
-- **Content:** request and customer IDs only, no customer names or contact details. Recipients are in BCC.
+- **New PPPoE account approved:** the active `admin` Manager receives the account name, installation address, mobile number, PPPoE username, password, and remote IP. Set the admin email address in User Management and enable approval emails with an SMTP TLS mode.
+- **PPPoE deletion:** after the router secret is removed or confirmed absent, all active Managers with email addresses receive a completion notice, including the Manager who performed the deletion.
+- **Recipients:** email addresses are sent in BCC. The new-account details are included in the admin email.
 - **Failures:** emails are sent in the background. A failed or unconfigured email is logged on the console (`ApprovalEmailFailed`, `ApprovalEmailSkipped`) and never changes the approval. A failed send also writes `EmailDeliveryFailed` (error type only) to the log file.
 
-Managers set email addresses under User Management, and every user can set their own in My Profile (`/profile`). The **Settings** page can switch emails on or off and change the sender without editing `appsettings`; values saved there override `appsettings`. Its **Send Test Email to Me** button sends one email to your own address at once.
+Managers set recipient email addresses under User Management. Each user can also set their own address in My Profile (`/profile`).
 
-### Turning emails on with Gmail
+### Configure SMTP in Settings
 
-1. In the Google account that will send the emails, turn on 2-Step Verification, then create an **app password** (Google Account > Security > App passwords). Gmail refuses the normal account password for SMTP.
-2. Put the login in user-secrets (or in `appsettings.Secrets.json`):
+Open **Settings → Email Configuration** as a Manager. Set the SMTP server and port, the mail login and password or app password, the connection security mode, the From address, and the sender name. The timeout, certificate revocation check, and optional link address are on the same form.
 
-```powershell
-dotnet user-secrets set "Email:Smtp:UserName" "<your-address>@gmail.com" --project src/Netora.WebApi
-dotnet user-secrets set "Email:Smtp:Password" "<16-character app password>" --project src/Netora.WebApi
-```
+Save the settings, then use **Send Test Email to Me** to test delivery to the address in My Profile. You can test with approval emails off. Use **Send approval emails** to enable automated messages.
 
-3. In `src/Netora.WebApi/appsettings.json` (or `appsettings.Production.json` on a server) set:
+Netora encrypts the password using its existing Data Protection keys. Leave the password blank to keep it when the connection and login stay the same. Saving the complete form overrides legacy SMTP configuration. If the form still uses the same legacy connection and login, saving it copies the password into encrypted storage.
 
-```json
-"Email": {
-  "Enabled": true,
-  "Smtp": { "Host": "smtp.gmail.com", "Port": 587, "UseSsl": true },
-  "From": "<your-address>@gmail.com"
-}
-```
-
-Port 465 with `"UseSsl": true` also works with Gmail. Use the same address in `From` as in `UserName`. Gmail replaces any other sender address unless it is set up as a "Send mail as" alias in that Gmail account. To stop sending, set `"Enabled": false`; nothing else needs to change.
+For Gmail, use `smtp.gmail.com` with port `587` and STARTTLS, or port `465` and TLS on connect. Enter the Gmail address as the login and use a Google app password. Use that address or an authorized alias for the From address.
 
 ## MikroTik router
 
@@ -244,7 +224,7 @@ Netora talks to one RouterOS 7 router over the REST API (HTTPS). It never delete
 - **When the router is contacted:** when a Manager approves a request (create, disable, enable, change plan, terminate), when Retry is pressed on a request, when a customer profile is opened or refreshed (live status and Configuration Mismatch), on Test Connection, and on an Import scan. There is no background synchronization.
 - **What is sent:** the account's current Netora values (desired state), so sending twice changes nothing more. A request that already succeeded is never sent again. A failed send is recorded on the request with the error; the approval stands and a Manager can retry.
 - **Safety:** creation never overwrites a secret Netora did not create (Netora marks its own secrets with `[netora:NET-0000]` in the comment). Mismatches are shown, never fixed automatically.
-- **Mock mode:** `Router:Mode = Mock` uses a pretend router. Every page that shows router data says "Mock router".
+- **Mock mode:** Netora uses a simulated router when the saved mode is Mock or when Mock is the startup default and no mode has been saved. Router data from this mode is labeled "Mock router".
 
 ## Internet Plans and NAP Boxes
 
@@ -272,11 +252,9 @@ Netora talks to one RouterOS 7 router over the REST API (HTTPS). It never delete
    /certificate print detail where name=router-https
    ```
    The last command shows the `fingerprint` to enter in Settings. Netora uses the REST API on `www-ssl` only; `api`, `api-ssl` and plain `www` are not needed.
-2. Switch the API to the real router and restart it. The Settings page stops showing "Mock router".
-   - Dev PC (only this machine, the repo keeps `Mock`): `dotnet user-secrets set "Router:Mode" "RouterOS" --project src/Netora.WebApi`. Back to the mock: `dotnet user-secrets remove "Router:Mode" --project src/Netora.WebApi`.
-   - Server: `"Router": { "Mode": "RouterOS" }` in `appsettings.Production.json`.
-3. In **Settings**, enter the router address, HTTPS port, API user name and password. If the router uses a self-signed certificate, also enter its SHA-256 fingerprint; only that exact certificate is then accepted.
-4. Press **Test Connection**. It should report the router's identity and RouterOS version.
+2. In **Settings → MikroTik Connection**, select **RouterOS** and enter the router address, HTTPS port, API user name and password. For a self-signed certificate, enter its SHA-256 fingerprint.
+3. Click **Save Router Settings**. The selected mode applies to subsequent router actions without restarting the API.
+4. Click **Test Connection**. A successful live test shows the router's identity and RouterOS version.
 5. On **Internet Plans**, enter each plan's speeds and profile name, press **Send to Router** on each plan (creates or updates the profile's rate-limit), then **Check Router Profiles**.
 6. Use **PPPoE Management > Import Accounts** to bring existing secrets into Netora (scan, review, confirm).
 
@@ -316,12 +294,18 @@ The tests use the EF Core in-memory provider, so they need no database. That pro
 
 ## Database migrations
 
-Apply `OnuHistoryAndTokenRevocation` before starting the updated API. It adds the ONU history and access token revocation tables.
+Apply pending migrations before starting the updated API. `OnuHistoryAndTokenRevocation` adds ONU history and access token revocation tables. `PppoeAccountDeletion` records PPPoE deletion authorization and completion. `CustomerDeletion` archives deleted customers. `OperationsPageHistory` adds backup runs and approval-email delivery history.
 
 ```powershell
 dotnet ef migrations add <Name> --project src/Netora.Infrastructure --startup-project src/Netora.WebApi --output-dir Persistence/Migrations
 dotnet ef database update      --project src/Netora.Infrastructure --startup-project src/Netora.WebApi
 ```
+
+## SQL Server backups
+
+Use **Backups** as a Manager. Enter a directory on a separate volume or storage mount on the SQL Server host. The SQL Server service account needs write access to that directory. The API login needs permission to back up the Netora database and read its backup history in `msdb`. Netora queues full copy-only backups with checksums. The WebAPI runs queued and scheduled jobs. The daily schedule uses Singapore time.
+
+Set retention on the backup storage host using your retention policy. Keep separate copies of the Data Protection key ring and customer attachments alongside the SQL backups. To validate recovery, have a SQL Server administrator run `RESTORE VERIFYONLY` and restore a copy to an isolated database to test it with the corresponding keys and attachments.
 
 ## Troubleshooting
 
@@ -332,7 +316,8 @@ dotnet ef database update      --project src/Netora.Infrastructure --startup-pro
 | API stops with "Connection string ... is not configured" | The secret is missing on this machine. Check `dotnet user-secrets list --project src/Netora.WebApi`, or `appsettings.Secrets.json` in the API folder |
 | `https://<host>:7225/` returns 401 | Expected: the API has no page at `/` and requires sign-in. Use `/swagger` or `/api/v1/health` |
 | The WebUI cannot call the API over https | Run `dotnet dev-certs https --trust` once |
-| Test Connection still says "Mock router" | The API was started before `Router:Mode` was changed. Restart it |
+| Test Connection or PPPoE import says "Mock router" | In **Settings → MikroTik Connection**, select **RouterOS**, enter the router credentials, save, and test before scanning |
+| The saved MikroTik password cannot be read | Re-enter the API password under **Settings → Router Settings**. Save and use **Test Connection** in RouterOS mode |
 | "The SSL connection could not be established" and an AVG popup about `https://<router-ip>/` | AVG Web Shield intercepts the HTTPS connection and replaces the router's certificate, so the fingerprint never matches. Add an exception for `https://<router-ip>/*` in AVG (Web Shield > Exceptions) |
 | AVG or Netora says the router certificate (or its issuer) has expired | The router's clock was wrong when the certificate was made. Set the clock (NTP), remove and recreate both certificates, and enter the new fingerprint |
 | No log file appears | Check the console for `Netora file log: could not write to ...`, and that the app account may write to `Logging:File:Path` |

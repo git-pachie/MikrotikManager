@@ -1,0 +1,84 @@
+@model Netora.WebUI.Controllers.BackupsViewModel
+@{
+    ViewData["Title"] = "Backups";
+    ViewData["Nav"] = "backups";
+    var latest = Model.History?.Items.FirstOrDefault();
+    var settings = Model.Settings;
+}
+<div class="heading">
+    <div class="heading-title">
+        <svg class="icon"><use href="#upload" /></svg>
+        <div><h1>Backups</h1><p>Manage and review SQL Server database backups.</p></div>
+    </div>
+    <div class="heading-actions"><a class="btn btn-outline" href="/backups">Refresh</a></div>
+</div>
+@if (TempData[Netora.WebUI.Controllers.CustomersController.ToastKey] is string toast)
+{
+    <p class="form-success" role="status">@toast</p>
+}
+@if ((TempData[Netora.WebUI.Controllers.CustomersController.ErrorKey] ?? ViewData["Error"]) is string error)
+{
+    <p class="form-alert" role="alert">@error</p>
+}
+<section class="panel module-panel">
+    <div class="module-head"><h2>Backup Overview</h2></div>
+    <div class="module-metrics">
+        <div class="panel module-metric">
+            <span>Last SQL Server Backup</span>
+            <strong>@(Model.History?.Available != true ? "History unavailable" : latest?.FinishedAt.ToString("MMM d, yyyy h:mm tt") ?? "No completed backup listed")</strong>
+            <small>SQL Server local time</small>
+        </div>
+        <div class="panel module-metric">
+            <span>Last Netora Run</span>
+            <strong>@(settings?.ManualRunQueued == true ? "Queued" : settings?.LastRunStatus ?? "No runs yet")</strong>
+            @if (settings?.LastRunAtUtc is { } lastRun)
+            {
+                <small>@ApprovalLabels.When(lastRun)</small>
+            }
+        </div>
+    </div>
+    @if (settings is not null)
+    {
+        <form asp-action="Save" method="post">
+            <div class="module-fields">
+                <label>Backup Directory
+                    <input name="destination" value="@settings.Destination" maxlength="180" placeholder="D:\NetoraBackups or /mnt/backups">
+                </label>
+                <label>Daily Backup Time (Singapore)
+                    <input type="time" name="dailyTimeSingapore" value="@settings.DailyTimeSingapore?.ToString("HH:mm")">
+                </label>
+            </div>
+            <p class="module-note">Use a directory on separate storage that the SQL Server service can write to. Leave the time blank to turn off scheduled backups.</p>
+            <div class="module-actions"><button type="submit" class="btn btn-primary">Save Backup Settings</button></div>
+        </form>
+        <form asp-action="Run" method="post" class="module-actions" data-confirm="Queue a full database backup now?">
+            <button type="submit" class="btn btn-outline" disabled="@(settings.Destination is null || settings.ManualRunQueued)">Run Backup</button>
+        </form>
+    }
+</section>
+<section class="panel module-panel">
+    <div class="module-head"><h2>Backup History</h2></div>
+    @if (Model.History?.Error is { } historyError)
+    {
+        <p class="form-alert" role="alert">@historyError</p>
+    }
+    else if (Model.History is { Items.Count: > 0 } history)
+    {
+        <div class="table-scroll">
+            <table class="customers-table all-table">
+                <thead><tr><th scope="col">Date</th><th scope="col">Type</th><th scope="col">Destination</th><th scope="col">Result</th></tr></thead>
+                <tbody>
+                    @foreach (var item in history.Items)
+                    {
+                        <tr><td>@item.FinishedAt.ToString("MMM d, yyyy h:mm tt")</td><td>@item.Type</td>
+                            <td>@(item.Destination ?? "—")</td><td><span class="pill active">Completed</span></td></tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+    else
+    {
+        <div class="detail-empty">SQL Server has no completed backup records for this database.</div>
+    }
+</section>

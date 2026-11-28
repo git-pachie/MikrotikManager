@@ -50,10 +50,13 @@ public static class AuditLabels
     {
         ["CustomerCreated"] = "Added customer",
         ["CustomerUpdated"] = "Edited customer",
+        ["CustomerDeleted"] = "Deleted customer",
         ["OnuReplaced"] = "Recorded ONU replacement",
         ["AttachmentUploaded"] = "Uploaded attachment",
         ["AttachmentDeleted"] = "Deleted attachment",
         ["PppoeUpdated"] = "Edited PPPoE details",
+        ["PppoeDeleted"] = "Deleted PPPoE account",
+        ["PppoePendingRequestClosed"] = "Closed pending PPPoE request",
         ["CustomerImported"] = "Imported from router",
         ["RouterProvisioned"] = "Sent to router",
         ["RouterProvisioningFailed"] = "Sending to router failed",
@@ -87,7 +90,7 @@ public static class AuditLabels
     private static readonly (string Op, string Label)[] Operations =
     [
         ("ChangePlan", "plan change"), ("Create", "PPPoE creation"), ("Disable", "PPPoE suspension"),
-        ("Enable", "PPPoE reactivation"), ("Terminate", "termination"),
+        ("Enable", "PPPoE reactivation"), ("Terminate", "termination"), ("Delete", "PPPoE deletion"),
     ];
 
     private static readonly (string Step, string Verb)[] Steps = [("Requested", "Requested"), ("Approved", "Approved"), ("Rejected", "Rejected")];
@@ -118,8 +121,8 @@ public static class AuditLabels
     public static readonly IReadOnlyList<string> SignInEvents =
         ["LoginSucceeded", "LoginFailed", "LockoutTriggered", "Logout", "PasswordChanged", "ProfileUpdated"];
 
-    public static readonly IReadOnlyList<string> CustomerActions = ["CustomerCreated", "CustomerUpdated", "AttachmentUploaded", "AttachmentDeleted", "OnuReplaced"];
-    public static readonly IReadOnlyList<string> PppoeActions = ["PppoeUpdated", "CustomerImported"];
+    public static readonly IReadOnlyList<string> CustomerActions = ["CustomerCreated", "CustomerUpdated", "CustomerDeleted", "AttachmentUploaded", "AttachmentDeleted", "OnuReplaced"];
+    public static readonly IReadOnlyList<string> PppoeActions = ["PppoeUpdated", "CustomerImported", "PppoeDeleted"];
     public static readonly IReadOnlyList<string> RouterActions = ["RouterProvisioned", "RouterProvisioningFailed"];
 
     /// <summary>User administration reasons end with ", by {actor}" (or are just "by {actor}"). Returns the actor and the rest.</summary>

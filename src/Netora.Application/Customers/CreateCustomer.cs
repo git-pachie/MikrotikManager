@@ -83,11 +83,27 @@ public sealed record CustomerFormOptionsDto(IReadOnlyList<string> Plans, IReadOn
 /// <summary>Moves a customer to another NAP box (06.02). No approval and no router call.</summary>
 public sealed record MoveNapRequest(string NapBox, string ConcurrencyStamp);
 
+public sealed record DeleteCustomerRequest(string ConcurrencyStamp);
+
+public enum DeleteCustomerOutcome
+{
+    Deleted,
+    NotFound,
+    Forbidden,
+    Conflict,
+    PppoeDeletionRequired,
+    PppoeExistsOnRouter,
+    RouterUnavailable,
+}
+
 /// <summary>The signed-in user performing a command. Built from the server-side token, never from request data.</summary>
 public sealed record CustomerActor(string UserId, string UserName, bool IsManager);
 
 public interface ICustomerCommands
 {
+    Task<DeleteCustomerOutcome> DeleteAsync(int id, DeleteCustomerRequest request, CustomerActor actor,
+        CancellationToken cancellationToken);
+
     Task<CreateCustomerResult> CreateAsync(CreateCustomerRequest request, CustomerActor actor,
         CancellationToken cancellationToken);
 

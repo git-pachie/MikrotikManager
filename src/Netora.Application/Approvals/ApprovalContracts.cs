@@ -69,11 +69,18 @@ public sealed record ApprovalDetailDto(
     bool PasswordSet,
     bool IsManagerOnly,
     bool CanDecide,
-    // Why Approve would be refused right now (for example no password yet). Null when it can be approved.
+    // Why Approve would be refused right now. Null when it can be approved.
     string? ApproveBlockedReason,
     // "Mock" or "RouterOS": which router the change is (or was) sent to.
     string RouterMode = "Mock",
-    bool CanRetry = false);
+    bool CanRetry = false,
+    bool CustomerDeleted = false,
+    CreatePppoeApprovalOptions? Creation = null);
+
+public sealed record ApprovalProfileOption(int PlanId, string PlanName, string Profile, string? LocalAddress);
+public sealed record ApprovalNapOption(string Code, string? Area);
+public sealed record CreatePppoeApprovalOptions(int PlanId, string NapCode, string? LocalAddress, string? RemoteAddress,
+    string ConcurrencyStamp, IReadOnlyList<ApprovalProfileOption> Profiles, IReadOnlyList<ApprovalNapOption> NapBoxes);
 
 public interface IApprovalQueries
 {

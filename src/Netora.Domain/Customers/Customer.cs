@@ -76,6 +76,7 @@ public sealed class Customer
     public string? CreatedByUserId { get; set; }
 
     public DateTimeOffset? UpdatedAtUtc { get; set; }
+    public DateTimeOffset? DeletedAtUtc { get; set; }
 
     public string? UpdatedByUserId { get; set; }
 
@@ -96,14 +97,18 @@ public sealed class Customer
     /// including the PPPoE Username and the Internet Plan, can change. Terminated accounts keep them fixed: the
     /// disabled secret still exists on the router and history must stay traceable.
     /// </summary>
-    public bool ServiceFieldsLocked => Status is CustomerStatus.Active or CustomerStatus.Terminated;
+    public bool ServiceFieldsLocked => PppoeDeletionRequestedAtUtc is not null || Status is CustomerStatus.Active or CustomerStatus.Terminated;
 
     /// <summary>
     /// Whether the PPPoE details (password, addresses, router comment, and username and plan) may be edited.
     /// Agreed 2026-11-25: Staff and Managers, except while Active; Terminated follows <see cref="CanBeChangedBy"/>
     /// and keeps username and plan fixed.
     /// </summary>
-    public bool PppoeDetailsEditableBy(bool actorIsManager) => Status != CustomerStatus.Active && CanBeChangedBy(actorIsManager);
+    public bool PppoeDetailsEditableBy(bool actorIsManager)
+        => PppoeDeletionRequestedAtUtc is null && Status != CustomerStatus.Active && CanBeChangedBy(actorIsManager);
+
+    public DateTimeOffset? PppoeDeletionRequestedAtUtc { get; set; }
+    public DateTimeOffset? PppoeDeletedAtUtc { get; set; }
 
     // ----- PPPoE account (module 04). Stored now, sent to MikroTik after Manager approval (modules 08/09). -----
 

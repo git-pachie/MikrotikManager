@@ -11,7 +11,7 @@ internal sealed class PppoeQueries(NetoraDbContext db) : IPppoeQueries
     public async Task<PppoeListDto> ListAsync(PppoeListQuery query, bool viewerIsManager, CancellationToken cancellationToken)
     {
         // Visibility first: an account linked to a Manager-only customer is invisible to Staff, also in the counts.
-        var visible = db.Customers.AsNoTracking();
+        var visible = db.Customers.AsNoTracking().Where(c => c.PppoeDeletedAtUtc == null);
         if (!viewerIsManager) visible = visible.Where(c => !c.IsManagerOnly);
 
         var pending = db.ApprovalRequests.AsNoTracking().Where(r => r.Status == ApprovalStatus.Pending);
@@ -53,13 +53,15 @@ internal sealed class PppoeQueries(NetoraDbContext db) : IPppoeQueries
             {
                 c.Id, c.FirstName, c.LastName, c.PppoeUsername, PlanName = c.Plan.Name, c.Status, c.RouterSyncStatus,
                 PasswordSet = c.PppoePasswordProtected != null,
+                DeletePending = c.PppoeDeletionRequestedAtUtc != null,
                 Pending = pending.Where(r => r.CustomerId == c.Id).Select(r => (ApprovalOperation?)r.Operation).FirstOrDefault(),
             })
             .ToListAsync(cancellationToken);
 
         var items = rows.Select(r => new PppoeListItemDto(
             r.Id, Customer.DisplayId(r.Id), Name(r.FirstName, r.LastName), r.PppoeUsername, r.PlanName,
-            PppoeStates.AccountState(r.Status), r.RouterSyncStatus.ToString(), r.PasswordSet, r.Pending?.ToString())).ToList();
+            PppoeStates.AccountState(r.Status), r.RouterSyncStatus.ToString(), r.PasswordSet, r.Pending?.ToString(),
+            viewerIsManager && !r.DeletePending)).ToList();
 
         return new PppoeListDto(items, total, page, pageSize, stats);
     }
@@ -67,7 +69,7 @@ internal sealed class PppoeQueries(NetoraDbContext db) : IPppoeQueries
     public async Task<PppoeDetailDto?> GetAsync(int customerId, bool viewerIsManager, CancellationToken cancellationToken)
     {
         var c = await db.Customers.AsNoTracking().Include(x => x.Plan)
-            .FirstOrDefaultAsync(x => x.Id == customerId && (viewerIsManager || !x.IsManagerOnly), cancellationToken);
+            .FirstOrDefaultAsync(x => x.Id == customerId && x.PppoeDeletedAtUtc == null && (viewerIsManager || !x.IsManagerOnly), cancellationToken);
         if (c is null) return null;
 
         var requests = await db.ApprovalRequests.AsNoTracking()
@@ -76,7 +78,7 @@ internal sealed class PppoeQueries(NetoraDbContext db) : IPppoeQueries
             .Take(10)
             .ToListAsync(cancellationToken);
         var pending = requests.FirstOrDefault(r => r.Status == ApprovalStatus.Pending);
-        var canChange = c.CanBeChangedBy(viewerIsManager);
+        var canChange = c.PppoeDeletionRequestedAtUtc is null && c.CanBeChangedBy(viewerIsManager);
 
         return new PppoeDetailDto(
             c.Id, Customer.DisplayId(c.Id), Name(c.FirstName, c.LastName), c.Status.ToString(), PppoeStates.AccountState(c.Status),
@@ -91,7 +93,9 @@ internal sealed class PppoeQueries(NetoraDbContext db) : IPppoeQueries
             CanRequestPlanChange: canChange && pending is null && PppoeStates.Fits(ApprovalOperation.ChangePlan, c.Status),
             CanRequestTerminate: canChange && pending is null && PppoeStates.Fits(ApprovalOperation.TerminatePppoe, c.Status),
             // A rejected creation can be sent for approval again.
-            CanResubmitCreate: canChange && pending is null && PppoeStates.Fits(ApprovalOperation.CreatePppoe, c.Status));
+            CanResubmitCreate: canChange && pending is null && PppoeStates.Fits(ApprovalOperation.CreatePppoe, c.Status),
+            CanDelete: viewerIsManager && canChange,
+            DeletionRequestId: requests.FirstOrDefault(r => r.Operation == ApprovalOperation.DeletePppoe)?.Id);
     }
 
     private static IOrderedQueryable<Customer> Sort(IQueryable<Customer> source, PppoeListQuery query, IQueryable<ApprovalRequest> pending)

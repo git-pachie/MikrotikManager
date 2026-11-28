@@ -1,0 +1,61 @@
+@using Netora.Application.Operations
+@model OperationsReportDto
+@{
+    ViewData["Title"] = "Reports";
+    ViewData["Nav"] = "reports";
+}
+<div class="heading">
+    <div class="heading-title">
+        <svg class="icon"><use href="#file" /></svg>
+        <div><h1>Reports</h1><p>Subscriber and provisioning reports.</p></div>
+    </div>
+    <div class="heading-actions"><a class="btn btn-outline" href="/customers">Customers</a></div>
+</div>
+<section class="panel module-panel">
+    <div class="module-head"><h2>Report Filters</h2></div>
+    <form method="get" action="/reports">
+        <div class="module-fields">
+            <label>Report Type
+                <select name="type">
+                    <option value="CustomerStatus" selected="@(Model.Type == ReportType.CustomerStatus)">Customer Status Summary</option>
+                    <option value="SubscribersByNap" selected="@(Model.Type == ReportType.SubscribersByNap)">Subscribers by NAP</option>
+                    <option value="SubscribersByPlan" selected="@(Model.Type == ReportType.SubscribersByPlan)">Subscribers by Plan</option>
+                    <option value="ProvisioningHistory" selected="@(Model.Type == ReportType.ProvisioningHistory)">PPPoE Provisioning History</option>
+                </select>
+            </label>
+            <label>Date Range
+                <select name="range">
+                    <option value="CurrentMonth" selected="@(Model.Range == ReportRange.CurrentMonth)">Current Month</option>
+                    <option value="LastMonth" selected="@(Model.Range == ReportRange.LastMonth)">Last Month</option>
+                    <option value="AllTime" selected="@(Model.Range == ReportRange.AllTime)">All Time</option>
+                </select>
+            </label>
+        </div>
+        <div class="module-actions">
+            <button type="submit" class="btn btn-primary">Generate Report</button>
+            <button type="submit" name="format" value="csv" class="btn btn-outline">Export CSV</button>
+        </div>
+    </form>
+    <p class="module-note">Date ranges use Singapore time. Subscriber reports filter by customer creation date. Provisioning history filters by approval date.</p>
+</section>
+<section class="panel module-panel">
+    <div class="module-head"><h2>Report Results</h2></div>
+    @if (ViewData["Error"] is string error)
+    {
+        <p class="form-alert" role="alert">@error</p>
+    }
+    else
+    {
+        <div class="table-scroll">
+            <table class="customers-table all-table">
+                <thead><tr><th scope="col">Metric</th><th scope="col">Count</th></tr></thead>
+                <tbody>
+                    @foreach (var row in Model.Metrics)
+                    {
+                        <tr><td>@row.Name</td><td>@row.Count</td></tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>

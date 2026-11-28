@@ -27,7 +27,8 @@ public class SettingsController(INetoraApiClient apiClient) : Controller
         if (ModelState.IsValid)
         {
             var result = await apiClient.UpdateRouterSettingsAsync(
-                new UpdateRouterSettingsRequest(form.Name, form.Address, form.Port, form.UserName, form.NewPassword, form.ClearPassword, form.CertificateThumbprint), cancellationToken);
+                new UpdateRouterSettingsRequest(form.Name, form.Address, form.Port, form.UserName, form.NewPassword,
+                    form.ClearPassword, form.CertificateThumbprint, form.Mode), cancellationToken);
             if (result.Success)
             {
                 TempData[CustomersController.ToastKey] = "Router settings saved.";
@@ -60,16 +61,21 @@ public class SettingsController(INetoraApiClient apiClient) : Controller
         if (!IsManager) return Denied();
         if (ModelState.IsValid)
         {
+            var smtp = form.Smtp;
             var result = await apiClient.UpdateEmailSettingsAsync(
-                new UpdateEmailSettingsRequest(form.Enabled, form.From, form.FromName, form.AppBaseUrl), cancellationToken);
+                new UpdateEmailSettingsRequest(form.Enabled, form.From, form.FromName, form.AppBaseUrl,
+                    new SmtpConfigurationRequest(smtp.Host, smtp.Port, smtp.UserName, smtp.NewPassword,
+                        smtp.ClearPassword, smtp.Security, smtp.TimeoutSeconds, smtp.CheckCertificateRevocation)), cancellationToken);
             if (result.Success)
             {
                 TempData[CustomersController.ToastKey] = form.Enabled ? "Email settings saved. Approval emails are on." : "Email settings saved. Approval emails are off.";
-                return Redirect("/settings");
+                return Redirect("/settings#notifications");
             }
             ApiErrors.Apply(ModelState, result.Error, typeof(EmailSettingsForm), "The email settings were not saved.", "Email.");
         }
         var model = await LoadAsync(cancellationToken);
+        form.Smtp.NewPassword = null;
+        ModelState.SetModelValue("Email.Smtp.NewPassword", null, null);
         model.Email = form;
         return View("Index", model);
     }
@@ -97,9 +103,18 @@ public class SettingsController(INetoraApiClient apiClient) : Controller
             Router = new RouterSettingsForm
             {
                 Name = d.Router.Name, Address = d.Router.Address, Port = d.Router.Port, UserName = d.Router.UserName,
-                CertificateThumbprint = d.Router.CertificateThumbprint,
+                CertificateThumbprint = d.Router.CertificateThumbprint, Mode = d.Router.Mode,
             },
-            Email = new EmailSettingsForm { Enabled = d.Email.Enabled, From = d.Email.From, FromName = d.Email.FromName, AppBaseUrl = d.Email.AppBaseUrl },
+            Email = new EmailSettingsForm
+            {
+                Enabled = d.Email.Enabled, From = d.Email.From, FromName = d.Email.FromName, AppBaseUrl = d.Email.AppBaseUrl,
+                Smtp = new SmtpConfigurationForm
+                {
+                    Host = d.Email.SmtpHost, Port = d.Email.SmtpPort, UserName = d.Email.SmtpUserName,
+                    Security = d.Email.SmtpSecurity, TimeoutSeconds = d.Email.SmtpTimeoutSeconds,
+                    CheckCertificateRevocation = d.Email.CheckCertificateRevocation,
+                },
+            },
         };
     }
 

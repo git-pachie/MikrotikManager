@@ -90,7 +90,7 @@
     else
     {
         <div class="detail-fields detail-diagnostics">
-            <div><span>PPPoE Secret</span><strong>@(result.Status.SecretState ?? (result.Status.SecretExpected ? "Missing on router" : "Awaiting creation"))</strong></div>
+            <div><span>PPPoE Secret</span><strong>@(result.Status.SecretState ?? (Model.Selected?.PppoeDeleted == true ? "Deleted" : result.Status.SecretExpected ? "Missing on router" : "Awaiting creation"))</strong></div>
             <div><span>Active Session</span><strong>@(result.Status.SessionActive ? "Connected" : result.Status.SecretFound ? "Offline" : "Unavailable")</strong></div>
             <div><span>Assigned IP</span><strong>@(result.Status.AssignedIp ?? "—")</strong></div>
             <div><span>Uptime</span><strong>@(result.Status.Uptime ?? "—")</strong></div>

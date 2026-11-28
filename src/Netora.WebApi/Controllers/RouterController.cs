@@ -12,7 +12,7 @@ namespace Netora.WebApi.Controllers;
 /// Router credentials never leave the API.
 /// </summary>
 [ApiController]
-public sealed class RouterController(IRouterStatusService status, IPppoeImportService import) : ControllerBase
+public sealed class RouterController(IRouterStatusService status, IPppoeImportService import, IRouterClient router) : ControllerBase
 {
     [HttpGet("api/v1/customers/{customerId:int}/diagnostics")]
     [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
@@ -57,9 +57,14 @@ public sealed class RouterController(IRouterStatusService status, IPppoeImportSe
     [HttpPost("api/v1/pppoe/import")]
     [Authorize(Policy = Policies.ManagerOnly)]
     [ProducesResponseType(typeof(ApiResponse<ImportResultDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<ImportResultDto>), StatusCodes.Status409Conflict)]
     [ProducesResponseType(typeof(ApiResponse<ImportResultDto>), StatusCodes.Status502BadGateway)]
     public async Task<IActionResult> Import([FromBody] ImportRequest request, CancellationToken cancellationToken)
     {
+        if (request.PreviewMode is not null && request.PreviewMode != router.Mode)
+            return Conflict(ApiResponse<ImportResultDto>.Fail("router_mode_changed",
+                "The router mode changed after your scan. Scan the router again before importing.", HttpContext.TraceIdentifier));
+
         var userId = User.FindFirst(NetoraClaimTypes.Subject)?.Value ?? string.Empty;
         try
         {

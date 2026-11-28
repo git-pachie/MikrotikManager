@@ -81,6 +81,13 @@ builder.Services.AddHttpClient<INetoraApiClient, NetoraApiClient>(client =>
         client.Timeout = TimeSpan.FromSeconds(15);
     })
     .AddHttpMessageHandler<BearerTokenHandler>();
+builder.Services.AddHttpClient(NetoraApiClient.EmailTestClient, client =>
+    {
+        client.BaseAddress = apiBaseUri;
+        // The API allows up to 120 seconds for an SMTP connection and send.
+        client.Timeout = TimeSpan.FromSeconds(130);
+    })
+    .AddHttpMessageHandler<BearerTokenHandler>();
 
 var app = builder.Build();
 

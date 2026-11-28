@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Netora.Application.Auth;
 using Netora.Application.Common;
@@ -11,6 +12,37 @@ namespace Netora.WebApi.Controllers;
 [Route("api/v1/customers")]
 public sealed class CustomersController(ICustomerQueries customers, ICustomerCommands commands, IActivityLog activity) : ControllerBase
 {
+    [HttpDelete("{id:int}")]
+    [Authorize(Policy = Policies.ManagerOnly)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status503ServiceUnavailable)]
+    public async Task<IActionResult> Delete(int id, [FromBody] DeleteCustomerRequest request, CancellationToken cancellationToken)
+    {
+        var trace = HttpContext.TraceIdentifier;
+        var actor = CurrentActor();
+        if (actor is null)
+            return Unauthorized(ApiResponse<object>.Fail("unauthorized", "Authentication is required.", trace));
+
+        return (await commands.DeleteAsync(id, request, actor, cancellationToken)) switch
+        {
+            DeleteCustomerOutcome.Deleted => Ok(ApiResponse<object>.Ok(new { }, trace)),
+            DeleteCustomerOutcome.NotFound => NotFound(ApiResponse<object>.Fail("not_found", "Customer not found.", trace)),
+            DeleteCustomerOutcome.Forbidden => StatusCode(StatusCodes.Status403Forbidden,
+                ApiResponse<object>.Fail("forbidden", "Only Managers can delete customers.", trace)),
+            DeleteCustomerOutcome.Conflict => Conflict(ApiResponse<object>.Fail("concurrency_conflict", "The customer changed. Reload and try again.", trace)),
+            DeleteCustomerOutcome.PppoeDeletionRequired => Conflict(ApiResponse<object>.Fail("pppoe_delete_required",
+                "Complete PPPoE account deletion in Netora first.", trace)),
+            DeleteCustomerOutcome.PppoeExistsOnRouter => Conflict(ApiResponse<object>.Fail("pppoe_exists_on_router",
+                "A PPPoE secret for this customer still exists on the configured router. Remove it before retrying.", trace)),
+            DeleteCustomerOutcome.RouterUnavailable => StatusCode(StatusCodes.Status503ServiceUnavailable,
+                ApiResponse<object>.Fail("router_unavailable", "Netora could not verify the PPPoE account on the router. Try again when the router is reachable.", trace)),
+            _ => throw new InvalidOperationException("Unexpected customer deletion outcome."),
+        };
+    }
+
     /// <summary>
     /// Paged customer list with summary counts. Manager-only customers are excluded for Staff from the rows,
     /// the counts and the filter options. The role is read from the database during token validation.

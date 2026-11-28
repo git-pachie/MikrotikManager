@@ -1,0 +1,31 @@
+@model Netora.Application.Pppoe.PppoeDetailDto
+@{
+    ViewData["Title"] = "Delete PPPoE Account";
+    var source = ViewData["DeleteSource"] as string;
+    var fromCustomer = source is "customers" or "customer";
+    var returnPath = ViewData["DeleteReturnPath"] as string ?? "/pppoe";
+    ViewData["Nav"] = fromCustomer ? "customers" : "pppoe";
+}
+<div class="detail-breadcrumb">
+    <a href="@(fromCustomer ? returnPath : "/pppoe")">@(source == "customer" ? "Customer Details" : fromCustomer ? "Customers" : "PPPoE Management")</a><span> / </span><strong>Delete Account</strong>
+</div>
+<div class="heading">
+    <div class="heading-title">
+        <svg class="icon"><use href="#wifi" /></svg>
+        <div><h1>Delete PPPoE Account</h1><p>@Model.PppoeUsername · @Model.DisplayId</p></div>
+    </div>
+</div>
+<section class="panel module-panel">
+    <div class="module-head"><h2>Confirm Deletion</h2></div>
+    <p>This removes the PPPoE secret from the configured router and removes the account from PPPoE Management. Netora keeps the customer record and history.</p>
+    @if (Model.PendingRequest is not null)
+    {
+        <p>The pending approval request will close when deletion is complete.</p>
+    }
+    <form asp-controller="Pppoe" asp-action="Delete" asp-route-id="@Model.CustomerId" method="post" class="module-actions">
+        <input type="hidden" name="concurrencyStamp" value="@Model.ConcurrencyStamp">
+        <input type="hidden" name="from" value="@source">
+        <button type="submit" class="btn btn-danger text-bg-danger border-danger">Delete PPPoE Account</button>
+        <a class="btn btn-outline" href="@returnPath">Cancel</a>
+    </form>
+</section>

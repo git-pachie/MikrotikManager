@@ -33,7 +33,8 @@ public sealed record PppoeListItemDto(
     string AccountState,
     string RouterSyncStatus,
     bool PasswordSet,
-    string? PendingOperation);
+    string? PendingOperation,
+    bool CanDelete = false);
 
 public sealed record PppoeStatsDto(int Total, int Enabled, int Disabled, int NotCreated, int PendingRequests);
 
@@ -76,7 +77,11 @@ public sealed record PppoeDetailDto(
     IReadOnlyList<ApprovalRequestDto> RecentRequests,
     bool CanRequestPlanChange = false,
     bool CanRequestTerminate = false,
-    bool CanResubmitCreate = false);
+    bool CanResubmitCreate = false,
+    bool CanDelete = false,
+    long? DeletionRequestId = null);
+
+public sealed record DeletePppoeRequest(string ConcurrencyStamp);
 
 /// <summary>Edit PPPoE form. Leave <see cref="NewPassword"/> empty to keep the current password.</summary>
 public sealed record UpdatePppoeRequest(
@@ -92,7 +97,18 @@ public sealed record UpdatePppoeRequest(
 /// <param name="TargetPlan">The new Internet Plan, required for ChangePlan.</param>
 public sealed record SubmitPppoeRequest(string Operation, string? Reason, string? TargetPlan = null);
 
-public sealed record DecidePppoeRequest(bool Approve, string? Note);
+public sealed record DecidePppoeRequest(bool Approve, string? Note, CreatePppoeApprovalInput? Creation = null);
+
+public sealed record CreatePppoeApprovalInput(int PlanId, string NapCode, string? NewPassword,
+    string? LocalAddress, string? RemoteAddress, string? ConcurrencyStamp)
+{
+    public const string DefaultPassword = "12345678";
+}
+
+public static class PppoePasswordMask
+{
+    public static bool IsMasked(string? value) => !string.IsNullOrEmpty(value) && value.All(c => c == '*');
+}
 
 public sealed class UpdatePppoeRequestValidator : AbstractValidator<UpdatePppoeRequest>
 {
@@ -106,8 +122,10 @@ public sealed class UpdatePppoeRequestValidator : AbstractValidator<UpdatePppoeR
             .WithMessage("PPPoE Username must be 3 to 40 characters: letters, digits, '.', '_' or '-'.");
         RuleFor(x => x.PlanName).NotEmpty().WithName("Internet Plan").MaximumLength(100);
         RuleFor(x => x.NewPassword!)
+            .Cascade(CascadeMode.Stop)
+            .Must(p => !PppoePasswordMask.IsMasked(p)).WithMessage("Enter the actual PPPoE password instead of asterisks.")
             .Length(PasswordMinLength, PasswordMaxLength).WithName("Password")
-            .Must(p => p.All(c => c > ' ' && c < 127))
+            .Must(p => p.All(IsPasswordCharacter))
             .WithMessage("Password may use letters, digits and symbols only (no spaces or special characters).")
             .When(x => !string.IsNullOrEmpty(x.NewPassword));
         RuleFor(x => x.RemoteAddress).Must(BeIPv4OrEmpty).WithName("Remote Address")
@@ -118,6 +136,8 @@ public sealed class UpdatePppoeRequestValidator : AbstractValidator<UpdatePppoeR
             .Must(c => c is null || !c.Any(char.IsControl)).WithMessage("Comment cannot contain line breaks.");
         RuleFor(x => x.ConcurrencyStamp).NotEmpty().MaximumLength(32);
     }
+
+    internal static bool IsPasswordCharacter(char c) => c > ' ' && c < 127;
 
     public static bool BeIPv4OrEmpty(string? value)
     {
@@ -160,12 +180,18 @@ public enum PppoeOutcome
     /// <summary>The request was already approved or rejected.</summary>
     AlreadyDecided,
 
-    /// <summary>Creating the account on the router needs a PPPoE password, so approval waits until one is set.</summary>
-    PasswordRequired,
+    DeletionInProgress,
+    PasswordUnavailable,
 }
 
 public sealed record PppoeResult(PppoeOutcome Outcome, IReadOnlyDictionary<string, string[]>? Errors = null,
     ApprovalRequestDto? Request = null);
+
+public sealed class PppoePasswordDto(string password)
+{
+    public string Password { get; } = password;
+}
+public sealed record PppoePasswordResult(PppoeOutcome Outcome, PppoePasswordDto? Value = null);
 
 public interface IPppoeQueries
 {
@@ -177,6 +203,10 @@ public interface IPppoeQueries
 
 public interface IPppoeCommands
 {
+    Task<PppoePasswordResult> RevealPasswordAsync(int customerId, CustomerActor actor, CancellationToken cancellationToken);
+
+    Task<PppoeResult> DeleteAsync(int customerId, DeletePppoeRequest request, CustomerActor actor, CancellationToken cancellationToken);
+
     Task<PppoeResult> UpdateAsync(int customerId, UpdatePppoeRequest request, CustomerActor actor, CancellationToken cancellationToken);
 
     /// <summary>
@@ -194,7 +224,7 @@ public interface IPppoePasswordProtector
 {
     string Protect(string password);
 
-    /// <summary>For sending the password to the router (module 09).</summary>
+    /// <summary>Decrypts the stored PPPoE password for server-side use.</summary>
     string Unprotect(string protectedPassword);
 }
 
@@ -264,12 +294,11 @@ public static class PppoeStates
     /// <summary>Why approving would be refused now, or null. Used when deciding and by the Approval Details page.</summary>
     public static PppoeOutcome? ApproveBlocker(ApprovalRequest approval, Customer customer)
     {
+        if (customer.PppoeDeletionRequestedAtUtc is not null) return PppoeOutcome.DeletionInProgress;
         if (!Fits(approval.Operation, customer.Status)) return PppoeOutcome.NotAllowedInCurrentState;
         if (approval.Operation == ApprovalOperation.ChangePlan
             && (approval.TargetPlanId is null || approval.TargetPlanId == customer.PlanId))
             return PppoeOutcome.NotAllowedInCurrentState;
-        if (approval.Operation == ApprovalOperation.CreatePppoe && customer.PppoePasswordProtected is null)
-            return PppoeOutcome.PasswordRequired;
         return null;
     }
 
@@ -288,6 +317,7 @@ public static class PppoeStates
             ApprovalOperation.EnablePppoe => (state, "Enabled"),
             ApprovalOperation.ChangePlan => ($"Plan {customer.Plan.Name}", $"Plan {targetPlan?.Name}"),
             ApprovalOperation.TerminatePppoe => (state, "Terminated"),
+            ApprovalOperation.DeletePppoe => (state, "PPPoE account deleted"),
             _ => (state, state),
         };
         return new ApprovalRequest

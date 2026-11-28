@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using FluentValidation;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
@@ -18,9 +19,7 @@ using Netora.Infrastructure.Persistence;
 namespace Netora.Infrastructure.Settings;
 
 /// <summary>
-/// Settings page (13.02). Router details are stored in the database with the password encrypted (Data Protection)
-/// and never returned. Email: Enabled, sender, sender name and link address are stored here and override
-/// appsettings; the SMTP server and login stay in configuration and secrets.
+/// Settings page (13.02). Router and SMTP passwords are stored using separate Data Protection purposes.
 /// </summary>
 internal sealed class SettingsService(
     NetoraDbContext db,
@@ -36,7 +35,13 @@ internal sealed class SettingsService(
     IActivityLog? activity = null) : ISettingsService
 {
     public const int DefaultRouterPort = 443;
-    private readonly IDataProtector routerProtector = protection.CreateProtector("Netora.Router.Password.v1");
+    private readonly IDataProtector routerProtector = protection.CreateProtector(Router.RouterConnectionProvider.PasswordPurpose);
+    private static readonly string[] RouterConnectionKeys =
+    [
+        AppSettingKeys.RouterMode, AppSettingKeys.RouterName, AppSettingKeys.RouterAddress,
+        AppSettingKeys.RouterPort, AppSettingKeys.RouterUserName, AppSettingKeys.RouterPassword,
+        AppSettingKeys.RouterCertificateThumbprint,
+    ];
 
     public async Task<SettingsDto> GetAsync(CancellationToken cancellationToken)
     {
@@ -45,14 +50,40 @@ internal sealed class SettingsService(
 
         var address = Value(AppSettingKeys.RouterAddress);
         var routerUser = Value(AppSettingKeys.RouterUserName);
-        var passwordSet = !string.IsNullOrEmpty(Value(AppSettingKeys.RouterPassword));
+        var storedPassword = Value(AppSettingKeys.RouterPassword);
+        var passwordSet = !string.IsNullOrEmpty(storedPassword);
+        var passwordUnreadable = false;
+        if (passwordSet)
+        {
+            try
+            {
+                routerProtector.Unprotect(storedPassword!);
+            }
+            catch (CryptographicException)
+            {
+                passwordUnreadable = true;
+            }
+        }
+        var mode = Router.RouterModeSelection.Resolve(Value(AppSettingKeys.RouterMode), routerOptions.Value);
+        DateTimeOffset? lastTested = null;
+        if (Value(AppSettingKeys.RouterLastTestMode) == mode
+            && DateTimeOffset.TryParse(Value(AppSettingKeys.RouterLastTestAtUtc), System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.RoundtripKind, out var tested)
+            && !RouterConnectionKeys.Any(key => saved.TryGetValue(key, out var setting) && setting.UpdatedAtUtc > tested)
+            && (mode == Router.RouterOptions.MockMode || !passwordUnreadable))
+        {
+            lastTested = tested;
+        }
+
+        var lastTestOk = lastTested is null ? null : Value(AppSettingKeys.RouterLastTestOk);
         var router = new RouterSettingsDto(Value(AppSettingKeys.RouterName), address,
             int.TryParse(Value(AppSettingKeys.RouterPort), out var port) ? port : DefaultRouterPort, routerUser, passwordSet,
-            ConnectionStatus: Value(AppSettingKeys.RouterLastTestOk) switch { "true" => "Connected", "false" => "Failed", _ => "NotTested" },
-            Mode: routerOptions.Value.IsRouterOs ? Router.RouterOptions.RouterOsMode : Router.RouterOptions.MockMode,
+            ConnectionStatus: lastTestOk switch { "true" => "Connected", "false" => "Failed", _ => "NotTested" },
+            Mode: mode,
             CertificateThumbprint: Value(AppSettingKeys.RouterCertificateThumbprint),
-            LastTestedAtUtc: DateTimeOffset.TryParse(Value(AppSettingKeys.RouterLastTestAtUtc), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind, out var tested) ? tested : null,
-            LastTestMessage: Value(AppSettingKeys.RouterLastTestMessage));
+            LastTestedAtUtc: lastTested,
+            LastTestMessage: lastTested is null ? null : Value(AppSettingKeys.RouterLastTestMessage),
+            PasswordUnreadable: passwordUnreadable);
 
         var email = await emailSettings.GetAsync(cancellationToken);
         var managers = await users.GetUsersInRoleAsync(Roles.Manager);
@@ -60,9 +91,10 @@ internal sealed class SettingsService(
         var withEmail = activeManagers.Count(u => !string.IsNullOrWhiteSpace(u.Email));
         var emailDto = new EmailSettingsDto(email.Enabled, email.From, email.FromName, email.AppBaseUrl, email.Smtp.Host, email.Smtp.Port,
             email.Smtp.UseSsl, !string.IsNullOrWhiteSpace(email.Smtp.UserName) && !string.IsNullOrEmpty(email.Smtp.Password),
-            email.Smtp.CheckCertificateRevocation, withEmail, email.NotReadyReason);
+            email.Smtp.CheckCertificateRevocation, withEmail, email.NotReadyReason, email.Smtp.UserName,
+            !string.IsNullOrEmpty(email.Smtp.Password), email.Smtp.EffectiveSecurity, email.Smtp.TimeoutSeconds);
 
-        var routerSaved = !string.IsNullOrWhiteSpace(address) && !string.IsNullOrWhiteSpace(routerUser) && passwordSet;
+        var routerSaved = !string.IsNullOrWhiteSpace(address) && !string.IsNullOrWhiteSpace(routerUser) && passwordSet && !passwordUnreadable;
         var bootstrapLeft = !string.IsNullOrWhiteSpace(configuration["Bootstrap:ManagerPassword"]);
         var setup = new List<SetupCheckDto>
         {
@@ -72,19 +104,21 @@ internal sealed class SettingsService(
                 bootstrapLeft ? "Remove Bootstrap:ManagerUserName and Bootstrap:ManagerPassword from the secrets now that a Manager exists." : "Done."),
             new("Manager email addresses", withEmail > 0,
                 withEmail > 0 ? $"{withEmail} of {activeManagers.Count} active Managers have an email address." : "No active Manager has an email address. Add one under User Management or My Profile."),
-            new("Approval emails", email.NotReadyReason is null && emailDto.SmtpLoginSet,
+            new("Approval emails", email.NotReadyReason is null,
                 email.NotReadyReason switch
                 {
                     "Disabled" => "Turned off. Switch on \"Send approval emails\" below.",
-                    "NotConfigured" => "Set the SMTP server (appsettings) and the sender below.",
-                    _ => emailDto.SmtpLoginSet ? "On." : "On, but the SMTP login is not set in the secrets.",
+                    "NotConfigured" => "Set the SMTP server and sender below.",
+                    "PasswordRequired" => "Enter the SMTP password below.",
+                    _ => "On.",
                 }),
             new("MikroTik router details", routerSaved,
-                !routerSaved ? "Enter the router address, user name and password below."
+                passwordUnreadable ? Router.RouterConnectionProvider.UnreadablePasswordMessage
+                : !routerSaved ? "Enter the router address, user name and password below."
                 : router.ConnectionStatus == "Connected" ? $"Saved and tested ({router.Mode})."
                 : "Saved. Use Test Connection to check it."),
             new("Router mode", router.Mode == Router.RouterOptions.RouterOsMode,
-                router.Mode == Router.RouterOptions.RouterOsMode ? "RouterOS: changes go to the real router." : "Mock: changes go to a pretend router (Router:Mode in appsettings). Set RouterOS to use the real router."),
+                router.Mode == Router.RouterOptions.RouterOsMode ? "Router changes go to the real MikroTik." : "Select RouterOS above to use the real MikroTik."),
         };
 
         return new SettingsDto(router, emailDto, setup);
@@ -95,7 +129,34 @@ internal sealed class SettingsService(
         var validation = await routerValidator.ValidateAsync(request, cancellationToken);
         if (!validation.IsValid) return Invalid(validation);
 
+        if (request.Mode is not (null or Router.RouterOptions.MockMode or Router.RouterOptions.RouterOsMode))
+            return InvalidField(nameof(request.Mode), "Select Mock or RouterOS.");
+
+        if (request.Mode == Router.RouterOptions.RouterOsMode)
+        {
+            if (string.IsNullOrWhiteSpace(request.Address))
+                return InvalidField(nameof(request.Address), "Enter the MikroTik address.");
+            if (string.IsNullOrWhiteSpace(request.UserName))
+                return InvalidField(nameof(request.UserName), "Enter the MikroTik API user name.");
+            if (request.ClearPassword)
+                return InvalidField(nameof(request.NewPassword), "Switch to Mock to remove the saved API password.");
+            if (string.IsNullOrEmpty(request.NewPassword))
+            {
+                try
+                {
+                    if (string.IsNullOrEmpty(await RouterPasswordAsync(cancellationToken)))
+                        return InvalidField(nameof(request.NewPassword), "Enter the MikroTik API password.");
+                }
+                catch (CryptographicException)
+                {
+                    return InvalidField(nameof(request.NewPassword), Router.RouterConnectionProvider.UnreadablePasswordMessage);
+                }
+            }
+        }
+
         var now = DateTimeOffset.UtcNow;
+        if (request.Mode is { } mode)
+            await SetAsync(AppSettingKeys.RouterMode, mode, actorUserId, now, cancellationToken);
         await SetAsync(AppSettingKeys.RouterName, Clean(request.Name), actorUserId, now, cancellationToken);
         await SetAsync(AppSettingKeys.RouterAddress, Clean(request.Address), actorUserId, now, cancellationToken);
         await SetAsync(AppSettingKeys.RouterPort, request.Port.ToString(System.Globalization.CultureInfo.InvariantCulture), actorUserId, now, cancellationToken);
@@ -115,8 +176,9 @@ internal sealed class SettingsService(
         await db.SaveChangesAsync(cancellationToken);
 
         // Field names only; the password value is never logged.
-        await events.WriteAsync(SecurityEventTypes.SettingsUpdated, true, actorUserId, null, null, $"Router settings, password {passwordChange}", cancellationToken);
-        logger.LogInformation("SettingsUpdated Section=Router Password={Password} ActorUserId={ActorUserId}", passwordChange, actorUserId);
+        var modeDetail = request.Mode is null ? "" : $", mode {request.Mode}";
+        await events.WriteAsync(SecurityEventTypes.SettingsUpdated, true, actorUserId, null, null, $"Router settings, password {passwordChange}{modeDetail}", cancellationToken);
+        logger.LogInformation("SettingsUpdated Section=Router Password={Password} Mode={Mode} ActorUserId={ActorUserId}", passwordChange, request.Mode, actorUserId);
         return new SettingsResult(SettingsOutcome.Ok);
     }
 
@@ -126,6 +188,38 @@ internal sealed class SettingsService(
         if (!validation.IsValid) return Invalid(validation);
 
         var now = DateTimeOffset.UtcNow;
+        if (request.Smtp is { } smtp)
+        {
+            var host = Clean(smtp.Host)?.Trim('[', ']');
+            var login = Clean(smtp.UserName);
+            var current = (await emailSettings.GetAsync(cancellationToken)).Smtp;
+            var sameConnection = string.Equals(current.Host?.Trim('[', ']'), host, StringComparison.OrdinalIgnoreCase)
+                && current.Port == smtp.Port && current.EffectiveSecurity == smtp.Security
+                && string.Equals(current.UserName, login, StringComparison.Ordinal);
+
+            if (request.Enabled && host is null)
+                return InvalidEmailField("Host", "Enter the SMTP server before turning emails on.");
+
+            var keepsPassword = login is not null && !smtp.ClearPassword && string.IsNullOrEmpty(smtp.NewPassword);
+            if (keepsPassword && !sameConnection && !string.IsNullOrEmpty(current.Password))
+                return InvalidEmailField("NewPassword", "Enter the SMTP password again when changing the connection or login.");
+            if (request.Enabled && login is not null && (smtp.ClearPassword
+                || (keepsPassword && (!sameConnection || string.IsNullOrEmpty(current.Password)))))
+                return InvalidEmailField("NewPassword", "Enter the SMTP password before turning emails on.");
+
+            await SetAsync(AppSettingKeys.EmailSmtpHost, host, actorUserId, now, cancellationToken);
+            await SetAsync(AppSettingKeys.EmailSmtpPort, smtp.Port.ToString(System.Globalization.CultureInfo.InvariantCulture), actorUserId, now, cancellationToken);
+            await SetAsync(AppSettingKeys.EmailSmtpUserName, login, actorUserId, now, cancellationToken);
+            await SetAsync(AppSettingKeys.EmailSmtpSecurity, smtp.Security.ToString(), actorUserId, now, cancellationToken);
+            await SetAsync(AppSettingKeys.EmailSmtpTimeoutSeconds, smtp.TimeoutSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture), actorUserId, now, cancellationToken);
+            await SetAsync(AppSettingKeys.EmailSmtpCheckCertificateRevocation, smtp.CheckCertificateRevocation ? "true" : "false",
+                actorUserId, now, cancellationToken);
+
+            var password = keepsPassword ? current.Password : smtp.ClearPassword || login is null ? null : smtp.NewPassword;
+            var protectedPassword = string.IsNullOrEmpty(password) ? null
+                : EmailSettingsProvider.PasswordProtector(protection, host, smtp.Port, smtp.Security, login).Protect(password);
+            await SetAsync(AppSettingKeys.EmailSmtpPassword, protectedPassword, actorUserId, now, cancellationToken, isProtected: true);
+        }
         await SetAsync(AppSettingKeys.EmailEnabled, request.Enabled ? "true" : "false", actorUserId, now, cancellationToken);
         await SetAsync(AppSettingKeys.EmailFrom, Clean(request.From), actorUserId, now, cancellationToken);
         await SetAsync(AppSettingKeys.EmailFromName, Clean(request.FromName), actorUserId, now, cancellationToken);
@@ -145,11 +239,11 @@ internal sealed class SettingsService(
 
         // The test works while approval emails are switched off, so the settings can be checked before turning them on.
         var settings = await emailSettings.GetAsync(cancellationToken);
-        if (string.IsNullOrWhiteSpace(settings.Smtp.Host) || string.IsNullOrWhiteSpace(settings.From))
+        if (settings.ConfigurationIssue is not null)
             return new SettingsResult(SettingsOutcome.NotConfigured);
 
         var message = new MimeMessage();
-        message.From.Add(new MailboxAddress(settings.FromName, settings.From));
+        message.From.Add(new MailboxAddress(settings.FromName, settings.From!));
         message.To.Add(new MailboxAddress(UserAdminService.DisplayName(user), user.Email));
         message.Subject = "[Netora] Test email";
         message.Body = new TextPart("plain")
@@ -199,6 +293,12 @@ internal sealed class SettingsService(
     }
 
     private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static SettingsResult InvalidEmailField(string field, string message)
+        => InvalidField($"Smtp.{field}", message);
+
+    private static SettingsResult InvalidField(string field, string message)
+        => new(SettingsOutcome.ValidationFailed, new Dictionary<string, string[]> { [field] = [message] });
 
     private static SettingsResult Invalid(FluentValidation.Results.ValidationResult v) => new(SettingsOutcome.ValidationFailed,
         v.Errors.GroupBy(e => e.PropertyName).ToDictionary(g => g.Key, g => g.Select(e => e.ErrorMessage).ToArray()));

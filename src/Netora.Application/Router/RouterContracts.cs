@@ -49,7 +49,7 @@ public sealed class RouterException(RouterErrorKind kind, string message, Except
 
 /// <summary>
 /// RouterOS 7 PPP access (09.01). Two implementations: the REST client over HTTPS (Router:Mode = RouterOS) and a mock
-/// for development without a router (Router:Mode = Mock). Secrets are never deleted through this interface.
+/// for development without a router (Router:Mode = Mock).
 /// </summary>
 public interface IRouterClient
 {
@@ -58,7 +58,7 @@ public interface IRouterClient
 
     Task<RouterIdentity> GetIdentityAsync(CancellationToken cancellationToken);
 
-    Task<IReadOnlyList<RouterSecret>> ListSecretsAsync(CancellationToken cancellationToken);
+    Task<IReadOnlyList<RouterSecret>> ListSecretsAsync(CancellationToken cancellationToken, bool includePasswords = true);
 
     /// <summary>By router ID first (survives a rename), then by name. Null when neither exists.</summary>
     Task<RouterSecret?> FindSecretAsync(string? id, string name, CancellationToken cancellationToken);
@@ -66,6 +66,7 @@ public interface IRouterClient
     Task<RouterSecret> CreateSecretAsync(RouterSecretWrite secret, CancellationToken cancellationToken);
 
     Task<RouterSecret> UpdateSecretAsync(string id, RouterSecretWrite secret, CancellationToken cancellationToken);
+    Task DeleteSecretAsync(string id, CancellationToken cancellationToken);
 
     Task<RouterActiveSession?> FindActiveSessionAsync(string name, CancellationToken cancellationToken);
 
@@ -82,7 +83,7 @@ public interface IRouterClient
 }
 
 /// <param name="RateLimit">RouterOS "rate-limit", for example "60M/60M" (upload/download from the customer's side). Null when unlimited.</param>
-public sealed record RouterPppProfile(string Id, string Name, string? RateLimit);
+public sealed record RouterPppProfile(string Id, string Name, string? RateLimit, string? LocalAddress = null, string? RemoteAddress = null);
 
 /// <summary>Sends an approved request to the router and records the outcome on the request (08.04, 04.05).</summary>
 public interface IRouterProvisioner
@@ -110,7 +111,10 @@ public sealed record RouterStatusDto(
     string? Uptime,
     string? ActualProfile,
     string ExpectedProfile,
-    IReadOnlyList<RouterMismatchDto> Mismatches);
+    IReadOnlyList<RouterMismatchDto> Mismatches,
+    PppoeRouterAddressesDto? Addresses = null);
+
+public sealed record PppoeRouterAddressesDto(string? Local, string? Remote, bool LocalFromProfile, bool RemoteFromProfile);
 
 /// <summary>A difference between SQL Server and the router. Shown, never fixed automatically (09.04).</summary>
 public sealed record RouterMismatchDto(string Field, string Expected, string Actual);
@@ -126,7 +130,7 @@ public sealed record ImportCandidateDto(string Name, string? Profile, bool Disab
 
 public sealed record ImportScanDto(string Mode, IReadOnlyList<ImportCandidateDto> Items, int NewCount);
 
-public sealed record ImportRequest(IReadOnlyList<string> Names);
+public sealed record ImportRequest(IReadOnlyList<string> Names, string? PreviewMode = null);
 
 public sealed record ImportResultDto(int Imported, int Skipped, IReadOnlyList<string> Messages);
 

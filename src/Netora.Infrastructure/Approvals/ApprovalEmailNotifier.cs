@@ -8,9 +8,12 @@ public enum ApprovalNoticeKind
 {
     Submitted,
     Decided,
+    PppoeDeleted,
+    PppoeCreationApproved,
 }
 
-public sealed record QueuedApprovalNotice(ApprovalNoticeKind Kind, ApprovalNotice Notice);
+public sealed record QueuedApprovalNotice(ApprovalNoticeKind Kind, ApprovalNotice Notice, string? RouterMode = null,
+    string? Actor = null, ApprovedPppoeDetails? Details = null);
 
 /// <summary>
 /// Queues approval emails for <see cref="ApprovalEmailDispatcher"/>, so a request returns without waiting for SMTP.
@@ -19,7 +22,7 @@ public sealed record QueuedApprovalNotice(ApprovalNoticeKind Kind, ApprovalNotic
 internal sealed class ApprovalEmailNotifier(ILogger<ApprovalEmailNotifier> logger) : IApprovalNotifier
 {
     private readonly Channel<QueuedApprovalNotice> queue = Channel.CreateBounded<QueuedApprovalNotice>(
-        new BoundedChannelOptions(500) { FullMode = BoundedChannelFullMode.DropWrite, SingleReader = true });
+        new BoundedChannelOptions(500) { FullMode = BoundedChannelFullMode.Wait, SingleReader = true });
 
     public ChannelReader<QueuedApprovalNotice> Reader => queue.Reader;
 
@@ -27,9 +30,16 @@ internal sealed class ApprovalEmailNotifier(ILogger<ApprovalEmailNotifier> logge
 
     public void RequestDecided(ApprovalNotice notice) => Enqueue(ApprovalNoticeKind.Decided, notice);
 
-    private void Enqueue(ApprovalNoticeKind kind, ApprovalNotice notice)
+    public void PppoeDeleted(ApprovalNotice notice, string routerMode, string actor)
+        => Enqueue(ApprovalNoticeKind.PppoeDeleted, notice, routerMode, actor);
+
+    public void PppoeCreationApproved(ApprovalNotice notice, ApprovedPppoeDetails details)
+        => Enqueue(ApprovalNoticeKind.PppoeCreationApproved, notice, details: details);
+
+    private void Enqueue(ApprovalNoticeKind kind, ApprovalNotice notice, string? routerMode = null, string? actor = null,
+        ApprovedPppoeDetails? details = null)
     {
-        if (!queue.Writer.TryWrite(new QueuedApprovalNotice(kind, notice)))
+        if (!queue.Writer.TryWrite(new QueuedApprovalNotice(kind, notice, routerMode, actor, details)))
             logger.LogWarning("ApprovalEmailDropped RequestId={RequestId} Kind={Kind} Reason=QueueFull", notice.RequestId, kind);
     }
 }

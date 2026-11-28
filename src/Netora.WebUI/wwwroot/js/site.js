@@ -26,7 +26,36 @@
   var toggle = document.getElementById('sidebarToggle');
   var sidebar = document.getElementById('sidebar');
   if (toggle && sidebar) {
-    toggle.addEventListener('click', function () { sidebar.classList.toggle('open'); });
+    var app = sidebar.closest('.app');
+    var compact = window.matchMedia('(max-width: 800px)');
+
+    function syncSidebar() {
+      var expanded = compact.matches ? sidebar.classList.contains('open') : !app.classList.contains('sidebar-collapsed');
+      toggle.setAttribute('aria-expanded', String(expanded));
+    }
+
+    function closeSidebar() {
+      sidebar.classList.remove('open');
+      syncSidebar();
+      toggle.focus();
+    }
+
+    toggle.addEventListener('click', function () {
+      if (compact.matches) {
+        if (sidebar.classList.toggle('open')) sidebar.querySelector('.nav-item')?.focus();
+      } else {
+        app.classList.toggle('sidebar-collapsed');
+      }
+      syncSidebar();
+    });
+    app.querySelector('.sidebar-backdrop')?.addEventListener('click', closeSidebar);
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape' && compact.matches && sidebar.classList.contains('open')) {
+        closeSidebar();
+      }
+    });
+    compact.addEventListener('change', syncSidebar);
+    syncSidebar();
   }
   // <select data-autosubmit> submits its form on change (used for "Rows per page").
   document.querySelectorAll('select[data-autosubmit]').forEach(function (s) {

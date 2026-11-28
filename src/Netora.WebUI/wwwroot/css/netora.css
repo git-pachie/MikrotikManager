@@ -70,7 +70,7 @@ a.action-btn,a.text-action{text-decoration:none}
 .pppoe-filters{grid-template-columns:minmax(220px,2.6fr) minmax(180px,1fr) auto auto}
 @media(max-width:800px){.pppoe-filters{grid-template-columns:repeat(2,minmax(0,1fr))}}
 /* Edit PPPoE page (no approved mockup): built from the approved form, panel and button styles. */
-.state-form{display:flex;align-items:flex-end;gap:11px;flex-wrap:wrap;margin-top:12px}.state-note{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:500;flex:1 1 280px;min-width:0}.state-note input{height:40px;border:1px solid #bfcee5;border-radius:7px;padding:0 12px;background:var(--surface);color:var(--ink);font-weight:400}.plain-fieldset{border:0;margin:0;padding:0;min-width:0}
+.state-form{display:flex;align-items:flex-end;gap:11px;flex-wrap:wrap;margin-top:12px}.state-note{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:500;flex:1 1 280px;min-width:0}.state-note input,.state-note select{height:40px;border:1px solid #bfcee5;border-radius:7px;padding:0 12px;background:var(--surface);color:var(--ink);font-weight:400}.plain-fieldset{border:0;margin:0;padding:0;min-width:0}
 /* Implementation addition (module 08): Pending Approvals filter and link-based pager, same look as the mockup pager buttons. */
 .approval-filter{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .approval-filter select,.approval-filter input{height:40px;border:1px solid #bfcee5;border-radius:7px;background:var(--surface);color:var(--ink);padding:0 12px}
@@ -103,4 +103,55 @@ a.profile{color:inherit;text-decoration:none}a.profile:hover .profile-name{color
   .top-right,.top-right .profile,.top-right .profile>div:not(.avatar){min-width:0}
   .top-right .avatar,.top-right .theme-toggle{flex-shrink:0}
   .top-right .profile-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+}
+
+.approval-dialog {
+    background: var(--surface);
+    color: var(--ink);
+    width: min(620px, calc(100vw - 32px));
+    max-height: calc(100dvh - 32px);
+    overflow: auto;
+    padding: 22px;
+}
+.approval-dialog::backdrop { background: rgb(10 24 47 / 55%); }
+
+.pppoe-password {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+}
+.pppoe-password [data-password-value] { overflow-wrap: anywhere; }
+
+.notification-link::after { content: none; }
+
+.sidebar {
+    display: flex;
+    flex-direction: column;
+}
+.sidebar .brand { flex-shrink: 0; }
+.sidebar-nav {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    scrollbar-width: thin;
+}
+.sidebar-nav .nav-item { flex-shrink: 0; }
+.sidebar-backdrop { display: none; }
+
+@media (width > 800px) {
+    .sidebar-collapsed > .sidebar { display: none; }
+    .sidebar-collapsed > .workspace { margin-left: 0; width: 100%; }
+}
+
+@media (max-width: 800px) {
+    .sidebar { visibility: hidden; transition: transform .2s, visibility 0s .2s; }
+    .sidebar.open { visibility: visible; transition-delay: 0s; }
+    .sidebar.open + .sidebar-backdrop {
+        display: block;
+        position: fixed;
+        inset: 0;
+        z-index: 9;
+        background: rgb(10 24 47 / 45%);
+    }
 }

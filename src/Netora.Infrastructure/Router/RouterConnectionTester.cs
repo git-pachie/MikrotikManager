@@ -46,6 +46,7 @@ internal sealed class RouterConnectionTester(
         await SetAsync(AppSettingKeys.RouterLastTestAtUtc, now.ToString("O", CultureInfo.InvariantCulture), actorUserId, now, cancellationToken);
         await SetAsync(AppSettingKeys.RouterLastTestOk, ok ? "true" : "false", actorUserId, now, cancellationToken);
         await SetAsync(AppSettingKeys.RouterLastTestMessage, message.Length <= 500 ? message : message[..500], actorUserId, now, cancellationToken);
+        await SetAsync(AppSettingKeys.RouterLastTestMode, router.Mode, actorUserId, now, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
 
         await events.WriteAsync(SecurityEventTypes.SettingsUpdated, ok, actorUserId, null, null, ok ? "Router test passed" : "Router test failed", cancellationToken);

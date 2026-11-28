@@ -22,6 +22,7 @@ public sealed class AppSetting
 public static class AppSettingKeys
 {
     public const string RouterName = "Router.Name";
+    public const string RouterMode = "Router.Mode";
     public const string RouterAddress = "Router.Address";
     public const string RouterPort = "Router.Port";
     public const string RouterUserName = "Router.UserName";
@@ -30,9 +31,17 @@ public static class AppSettingKeys
     public const string RouterLastTestAtUtc = "Router.LastTestAtUtc";
     public const string RouterLastTestOk = "Router.LastTestOk";
     public const string RouterLastTestMessage = "Router.LastTestMessage";
+    public const string RouterLastTestMode = "Router.LastTestMode";
 
     public const string EmailEnabled = "Email.Enabled";
     public const string EmailFrom = "Email.From";
     public const string EmailFromName = "Email.FromName";
     public const string EmailAppBaseUrl = "Email.AppBaseUrl";
+    public const string EmailSmtpHost = "Email.Smtp.Host";
+    public const string EmailSmtpPort = "Email.Smtp.Port";
+    public const string EmailSmtpUserName = "Email.Smtp.UserName";
+    public const string EmailSmtpPassword = "Email.Smtp.Password";
+    public const string EmailSmtpSecurity = "Email.Smtp.Security";
+    public const string EmailSmtpTimeoutSeconds = "Email.Smtp.TimeoutSeconds";
+    public const string EmailSmtpCheckCertificateRevocation = "Email.Smtp.CheckCertificateRevocation";
 }

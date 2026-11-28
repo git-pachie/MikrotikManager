@@ -115,6 +115,7 @@ app.UseRateLimiter();
 app.UseAuthentication();
 app.UseMiddleware<PasswordChangeRequiredMiddleware>();
 app.UseAuthorization();
+app.UseMiddleware<RouterModeMiddleware>();
 app.MapControllers();
 
 app.Run();

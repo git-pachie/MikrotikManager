@@ -22,8 +22,9 @@ public static class PppoeResultMapper
             PppoeOutcome.NotAllowedInCurrentState => controller.Conflict(ApiResponse<object>.Fail("not_allowed_in_current_state", "This request does not fit the account's current state.", t)),
             PppoeOutcome.RequestAlreadyPending => controller.Conflict(ApiResponse<object>.Fail("request_already_pending", "A request for this account is already waiting for a Manager.", t)),
             PppoeOutcome.AlreadyDecided => controller.Conflict(ApiResponse<object>.Fail("already_decided", "This request was already approved or rejected.", t)),
-            PppoeOutcome.PasswordRequired => controller.Conflict(ApiResponse<object>.Fail("password_required", "Set a PPPoE password before approving the account creation.", t)),
-            PppoeOutcome.Forbidden => controller.StatusCode(StatusCodes.Status403Forbidden, ApiResponse<object>.Fail("forbidden", "Only Managers can decide requests.", t)),
+            PppoeOutcome.Forbidden => controller.StatusCode(StatusCodes.Status403Forbidden, ApiResponse<object>.Fail("forbidden", "This action requires the Manager role.", t)),
+            PppoeOutcome.DeletionInProgress => controller.Conflict(ApiResponse<object>.Fail("pppoe_deletion_in_progress", "A deletion request already exists for this account. Open its approval details to see the result or retry.", t)),
+            PppoeOutcome.PasswordUnavailable => controller.Conflict(ApiResponse<object>.Fail("password_unavailable", "Netora has no readable saved password for this PPPoE account.", t)),
             _ => throw new InvalidOperationException($"Unhandled outcome {result.Outcome}"),
         };
     }

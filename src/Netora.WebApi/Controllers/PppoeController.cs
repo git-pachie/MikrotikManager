@@ -11,13 +11,46 @@ using Netora.WebApi.Infrastructure;
 namespace Netora.WebApi.Controllers;
 
 /// <summary>
-/// PPPoE accounts (module 04), stored in the database. Nothing here contacts MikroTik: approved changes are marked
-/// "not sent to router" until module 09 adds the router connection.
+/// PPPoE accounts, approval requests and Manager-only deletion.
 /// </summary>
 [ApiController]
 [Route("api/v1/pppoe")]
 public sealed class PppoeController(IPppoeQueries queries, IPppoeCommands commands) : ControllerBase
 {
+    [HttpPost("{customerId:int}/password")]
+    [Authorize(Policy = Policies.ManagerOnly)]
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+    [ProducesResponseType(typeof(ApiResponse<PppoePasswordDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> RevealPassword(int customerId, CancellationToken cancellationToken)
+    {
+        var actor = CurrentActor();
+        if (actor is null) return Unauthenticated();
+        var result = await commands.RevealPasswordAsync(customerId, actor, cancellationToken);
+        return result.Value is { } value
+            ? Ok(ApiResponse<PppoePasswordDto>.Ok(value, HttpContext.TraceIdentifier))
+            : Failure(new(result.Outcome));
+    }
+
+    [HttpDelete("{customerId:int}")]
+    [Authorize(Policy = Policies.ManagerOnly)]
+    [ProducesResponseType(typeof(ApiResponse<ApprovalRequestDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<ApprovalRequestDto>), StatusCodes.Status202Accepted)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Delete(int customerId, [FromBody] DeletePppoeRequest request, CancellationToken cancellationToken)
+    {
+        var actor = CurrentActor();
+        if (actor is null) return Unauthenticated();
+        var result = await commands.DeleteAsync(customerId, request, actor, cancellationToken);
+        if (result.Outcome != PppoeOutcome.Ok || result.Request is not { } deletion) return Failure(result);
+
+        var response = ApiResponse<ApprovalRequestDto>.Ok(deletion, HttpContext.TraceIdentifier);
+        return deletion.ProvisioningStatus == "Succeeded" ? Ok(response) : Accepted(response);
+    }
+
     /// <summary>PPPoE accounts with counts. Accounts of Manager-only customers are excluded for Staff, also from the counts.</summary>
     [HttpGet]
     [ProducesResponseType(typeof(ApiResponse<PppoeListDto>), StatusCodes.Status200OK)]

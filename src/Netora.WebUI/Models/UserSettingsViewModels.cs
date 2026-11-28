@@ -90,6 +90,7 @@ public sealed class ChangePasswordViewModel
 
 public sealed class RouterSettingsForm
 {
+    public string? Mode { get; set; }
     [StringLength(100)] public string? Name { get; set; }
     [StringLength(253)] public string? Address { get; set; }
     [Range(1, 65535, ErrorMessage = "Enter a port from 1 to 65535.")] public int Port { get; set; } = 443;
@@ -105,6 +106,19 @@ public sealed class EmailSettingsForm
     [EmailAddress(ErrorMessage = "Enter a valid sender address.")] [StringLength(256)] public string? From { get; set; }
     [StringLength(100)] public string? FromName { get; set; }
     [StringLength(300)] public string? AppBaseUrl { get; set; }
+    public SmtpConfigurationForm Smtp { get; set; } = new();
+}
+
+public sealed class SmtpConfigurationForm
+{
+    [StringLength(253)] public string? Host { get; set; }
+    [Range(1, 65535)] public int Port { get; set; } = 587;
+    [StringLength(256)] public string? UserName { get; set; }
+    [StringLength(256)] [DataType(DataType.Password)] public string? NewPassword { get; set; }
+    public bool ClearPassword { get; set; }
+    public SmtpSecurityMode Security { get; set; } = SmtpSecurityMode.StartTls;
+    [Range(5, 120)] public int TimeoutSeconds { get; set; } = 30;
+    public bool CheckCertificateRevocation { get; set; } = true;
 }
 
 public sealed class SettingsViewModel
@@ -135,7 +149,10 @@ public static class ApiErrors
         {
             foreach (var (field, messages) in details)
             {
-                var key = formType.GetProperty(field) is not null ? prefix + field : string.Empty;
+                Type? fieldType = formType;
+                foreach (var segment in field.Split('.'))
+                    fieldType = fieldType?.GetProperty(segment)?.PropertyType;
+                var key = fieldType is not null ? prefix + field : string.Empty;
                 foreach (var message in messages) modelState.AddModelError(key, message);
             }
             return;

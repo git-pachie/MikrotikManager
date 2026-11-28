@@ -20,7 +20,7 @@ public static class NavItems
         new("users", "/users", "users", "User Management", ManagerOnly: true),
         new("settings", "/settings", "settings", "Settings", ManagerOnly: true),
         new("reports", "/reports", "file", "Reports"),
-        new("backups", "/backups", "upload", "Backups"),
+        new("backups", "/backups", "upload", "Backups", ManagerOnly: true),
         new("notifications", "/notifications", "bell", "Notifications"),
     };
 }

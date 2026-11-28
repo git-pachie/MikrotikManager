@@ -1,0 +1,53 @@
+@using Netora.Application.Operations
+@model IReadOnlyList<NotificationItemDto>?
+@{
+    ViewData["Title"] = "Notifications";
+    ViewData["Nav"] = "notifications";
+}
+<div class="heading">
+    <div class="heading-title">
+        <svg class="icon"><use href="#bell" /></svg>
+        <div><h1>Notifications</h1><p>Review approval decisions, router results, and email delivery status.</p></div>
+    </div>
+    <div class="heading-actions"><a class="btn btn-outline" href="/approvals">Approvals</a></div>
+</div>
+<section class="panel module-panel">
+    <div class="module-head"><h2>Recent Notifications</h2></div>
+    @if (ViewData["Error"] is string error)
+    {
+        <p class="form-alert" role="alert">@error</p>
+    }
+    else if (Model is { Count: > 0 } items)
+    {
+        <div class="table-scroll">
+            <table class="customers-table all-table">
+                <thead><tr><th scope="col">Date</th><th scope="col">Recipient</th><th scope="col">Subject</th><th scope="col">Status</th></tr></thead>
+                <tbody>
+                    @foreach (var item in items)
+                    {
+                        var style = item.Status switch
+                        {
+                            "Approved" or "Succeeded" or "Accepted by SMTP" => "active",
+                            "Rejected" or "Failed" or "Email failed" => "terminated",
+                            "Awaiting approval" or "NotSent" => "pending",
+                            _ => "unknown",
+                        };
+                        <tr>
+                            <td>@ApprovalLabels.When(item.OccurredAtUtc)</td><td>@item.Recipient</td>
+                            <td><a class="customer-link" href="/approvals/@item.RequestId">@item.Subject</a></td>
+                            <td><span class="pill @style">@(item.Status == "NotSent" ? "Not sent" : item.Status)</span></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+    else
+    {
+        <div class="detail-empty">No notifications yet.</div>
+    }
+</section>
+<section class="panel module-panel">
+    <div class="module-head"><h2>Delivery Rules</h2></div>
+    <p class="module-note">Managers see pending approvals. Requesters see their decisions and router outcomes. Email delivery records appear when Netora processes an approval email.</p>
+</section>

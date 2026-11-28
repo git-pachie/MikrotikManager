@@ -20,6 +20,9 @@ Retain customer profile, attachments, ONU history, and audit records after termi
 
 Support secure customer attachments with authorization, upload/download validation, and retention. Confirm permitted types and size limits first.
 
+### 03.06 Manager-only customer deletion
+
+Delete Customer is available from the Customers list and details. It requires completed PPPoE deletion in Netora and a fresh check that the configured router has no matching secret. The operation removes the customer from operational views and counts, retains an archived record and history, and records `CustomerDeleted` in the Audit Trail and file log.
 
 ## V2 mockup-aligned implementation instructions
 

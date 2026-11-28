@@ -1,5 +1,6 @@
 using System.Globalization;
 using Netora.Application.Approvals;
+using Netora.Application.Pppoe;
 
 namespace Netora.WebUI.Models;
 
@@ -26,6 +27,9 @@ public sealed class ApprovalDetailViewModel
 {
     public required ApprovalDetailDto Detail { get; init; }
     public bool IsManager { get; init; }
+    public CreatePppoeApprovalInput? PostedCreation { get; init; }
+    public string? DecisionNote { get; init; }
+    public string? CreationError { get; init; }
 }
 
 /// <summary>Display wording for approvals, following the approved approvals.html mockup.</summary>
@@ -38,6 +42,7 @@ public static class ApprovalLabels
         "EnablePppoe" => "Reactivate account",
         "ChangePlan" => "Change plan",
         "TerminatePppoe" => "Terminate account",
+        "DeletePppoe" => "Delete PPPoE account",
         _ => operation ?? string.Empty,
     };
 

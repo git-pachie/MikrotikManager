@@ -13,11 +13,18 @@
         <svg class="icon"><use href="#clipboard" /></svg>
         <div>
             <h1>@d.DisplayId: @operation</h1>
-            <p><a class="customer-link" href="/customers/@d.CustomerId">@d.CustomerName</a> <span class="detail-dot">•</span> @d.CustomerDisplayId <span class="detail-dot">•</span> @d.PppoeUsername</p>
+            <p>
+                @if (d.CustomerDeleted) { <span>@d.CustomerDisplayId (deleted)</span> }
+                else { <a class="customer-link" href="/customers/@d.CustomerId">@d.CustomerName</a> <span class="detail-dot">•</span> @d.CustomerDisplayId }
+                <span class="detail-dot">•</span> @d.PppoeUsername
+            </p>
         </div>
     </div>
     <div class="heading-actions">
-        <a class="btn btn-outline" href="/pppoe/@d.CustomerId">PPPoE Account</a>
+        @if (d.AccountState != "Deleted")
+        {
+            <a class="btn btn-outline" href="/pppoe/@d.CustomerId">PPPoE Account</a>
+        }
         <a class="btn btn-outline" href="/approvals">Back to Approvals</a>
     </div>
 </div>
@@ -48,7 +55,10 @@
 <section class="panel module-panel">
     <div class="module-head"><h2>Customer</h2></div>
     <div class="detail-fields">
-        <div><span>Customer</span><strong><a class="customer-link" href="/customers/@d.CustomerId">@d.CustomerName</a> (@d.CustomerDisplayId)</strong></div>
+        <div><span>Customer</span><strong>
+            @if (d.CustomerDeleted) { <span>@d.CustomerDisplayId (deleted)</span> }
+            else { <a class="customer-link" href="/customers/@d.CustomerId">@d.CustomerName</a> <text>(@d.CustomerDisplayId)</text> }
+        </strong></div>
         <div><span>Account</span><strong>@PppoeLabels.State(d.AccountState)</strong></div>
         <div><span>PPPoE Username</span><strong>@d.PppoeUsername</strong></div>
         <div><span>Internet Plan</span><strong>@d.PlanName</strong></div>
@@ -76,8 +86,64 @@
         }
         <form method="post" asp-controller="Approvals" asp-action="Decide" asp-route-id="@d.Id" class="state-form"
               data-confirm="Record this decision for @d.DisplayId? It cannot be changed afterwards.">
-            <label class="state-note">Decision note (optional)<input name="note" maxlength="500" placeholder="Visible to the requester and in the history"></label>
-            <button type="submit" name="approve" value="true" class="btn btn-primary" disabled="@(d.ApproveBlockedReason is not null)">Approve</button>
+            <label class="state-note">Decision note (optional)<input name="note" value="@Model.DecisionNote" maxlength="500" placeholder="Visible to the requester and in the history"></label>
+            @if (d.Creation is { } creation)
+            {
+                var planId = Model.PostedCreation?.PlanId ?? creation.PlanId;
+                var napCode = Model.PostedCreation?.NapCode ?? creation.NapCode;
+                var localAddress = Model.PostedCreation is { } posted ? posted.LocalAddress : creation.LocalAddress;
+                var remoteAddress = Model.PostedCreation is { } saved ? saved.RemoteAddress : creation.RemoteAddress;
+                <button type="button" id="open-pppoe-approval" class="btn btn-primary">Approve</button>
+                <dialog id="pppoe-approval" class="panel approval-dialog" aria-labelledby="pppoe-approval-title"
+                        data-reopen="@(Model.CreationError is not null ? "true" : "false")">
+                    <div class="module-head"><h2 id="pppoe-approval-title">Approve PPPoE Account</h2></div>
+                    @if (Model.CreationError is { } error)
+                    {
+                        <p class="form-alert" role="alert">@error</p>
+                    }
+                    <input type="hidden" name="creation.ConcurrencyStamp" value="@creation.ConcurrencyStamp">
+                    <div class="module-fields">
+                        <label>Profile
+                            <select name="creation.PlanId" id="approval-profile" autofocus>
+                                @foreach (var profile in creation.Profiles)
+                                {
+                                    <option value="@profile.PlanId" selected="@(profile.PlanId == planId)" data-local="@profile.LocalAddress">
+                                        @(profile.Profile == profile.PlanName ? profile.Profile : $"{profile.Profile} ({profile.PlanName})")
+                                    </option>
+                                }
+                            </select>
+                        </label>
+                        <label>PPPoE Password
+                            <input type="password" id="approval-pppoe-password" name="creation.NewPassword" maxlength="64" autocomplete="new-password"
+                                   placeholder="@(d.PasswordSet ? "Leave blank to keep the saved password" : "Default: 12345678")">
+                        </label>
+                        <label>Local IP
+                            <input id="approval-local-ip" name="creation.LocalAddress" value="@localAddress" maxlength="15" placeholder="Use profile default">
+                        </label>
+                        <label>Remote IP
+                            <input name="creation.RemoteAddress" value="@remoteAddress" maxlength="15" placeholder="Assigned by the router">
+                        </label>
+                        <label class="span-2">NAP Box Location
+                            <select name="creation.NapCode">
+                                @foreach (var nap in creation.NapBoxes)
+                                {
+                                    <option value="@nap.Code" selected="@(nap.Code == napCode)">
+                                        @(string.IsNullOrWhiteSpace(nap.Area) ? nap.Code : $"{nap.Code} — {nap.Area}")
+                                    </option>
+                                }
+                            </select>
+                        </label>
+                    </div>
+                    <div class="module-actions">
+                        <button type="submit" name="approve" value="true" id="confirm-pppoe-approval" class="btn btn-primary" disabled>Approve Account</button>
+                        <button type="button" id="close-pppoe-approval" class="btn btn-outline">Cancel</button>
+                    </div>
+                </dialog>
+            }
+            else
+            {
+                <button type="submit" name="approve" value="true" class="btn btn-primary" disabled="@(d.ApproveBlockedReason is not null)">Approve</button>
+            }
             <button type="submit" name="approve" value="false" class="btn btn-outline">Reject</button>
         </form>
         <p class="module-note">Approving saves the change in Netora and then sends it to the @(d.RouterMode == "Mock" ? "mock router" : "MikroTik router"). The router result is tracked separately under Router below; a router failure never undoes the approval.</p>
@@ -87,6 +153,13 @@
         <p class="module-note">Waiting for a Manager to approve or reject this request.</p>
     }
 </section>
+
+@section Scripts {
+    @if (d.Creation is not null)
+    {
+        <script src="~/js/pppoe-approval.js" asp-append-version="true"></script>
+    }
+}
 
 <section class="panel module-panel">
     <div class="module-head">
@@ -111,12 +184,12 @@
         {
             <form method="post" asp-controller="Approvals" asp-action="Retry" asp-route-id="@d.Id" class="module-actions">
                 <button type="submit" class="btn btn-primary">Retry on Router</button>
-                <span class="module-note">Sends the account's current Netora values again. A change that already succeeded is never repeated.</span>
+                <span class="module-note">@(d.Operation == "DeletePppoe" ? "Retries removal of the PPPoE secret." : "Sends the account's current Netora values again. A change that already succeeded is never repeated.")</span>
             </form>
         }
         else if (d.ProvisioningStatus is "NotSent" or "Failed")
         {
-            <p class="module-note">Waiting for a Manager to retry sending this change to the router.</p>
+            <p class="module-note">@(d.CustomerDeleted ? "The customer was deleted. This request is closed to further retries." : "Waiting for a Manager to retry sending this change to the router.")</p>
         }
         else if (d.ProvisioningStatus == "Superseded")
         {
@@ -124,7 +197,7 @@
         }
         else
         {
-            <p class="module-note">The router has this change. It will not be sent again.</p>
+            <p class="module-note">@(d.Operation == "DeletePppoe" ? "The PPPoE secret is absent on the router and the account has been removed from PPPoE Management." : "The router has this change. It will not be sent again.")</p>
         }
     }
 </section>

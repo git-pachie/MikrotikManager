@@ -3,6 +3,8 @@
     ViewData["Title"] = "Import PPPoE";
     ViewData["Nav"] = "pppoe";
     var scan = Model.Scan;
+    var mode = scan?.Mode ?? Model.Router?.Mode;
+    var mock = mode == "Mock";
 }
 @* Layout from approved-mockups/import-pppoe.html. The scan runs only when a Manager presses Scan Router (04.04),
    and nothing is imported until the selection is confirmed. *@
@@ -32,15 +34,23 @@
 <section class="panel module-panel">
     <div class="module-head">
         <h2>Import Options</h2>
-        @if (scan is not null)
+        @if (mode is not null)
         {
-            <span class="pill @(scan.Mode == "Mock" ? "pending" : "active")">@(scan.Mode == "Mock" ? "Mock router" : "RouterOS")</span>
+            <span class="pill @(mock ? "pending" : "active")">@(mock ? "Mock router" : "RouterOS")</span>
         }
     </div>
     <div class="module-fields">
-        <label>Router<select disabled><option>Router saved in Settings</option></select></label>
+        <label>Scan source<input readonly value="@(mock ? "Mock router" : mode == "RouterOS" ? Model.Router?.Name ?? Model.Router?.Address ?? "MikroTik" : "Mode unavailable")"></label>
         <label>Duplicate Handling<select disabled><option>Skip existing usernames</option></select></label>
     </div>
+    @if (mock)
+    {
+        <p class="detail-alert" role="status">This scan uses the mock router. To import from MikroTik, select RouterOS in <a href="/settings">Settings</a>, save, and run Test Connection.</p>
+    }
+    @if (Model.Router?.PasswordUnreadable == true)
+    {
+        <p class="form-alert" role="alert">Re-enter the API password in <a href="/settings">Router Settings</a> before connecting to MikroTik.</p>
+    }
     <div class="module-actions">
         <form method="post" action="/pppoe/import/scan">
             @Html.AntiForgeryToken()
@@ -48,7 +58,7 @@
         </form>
         <button type="submit" form="importForm" class="btn btn-outline" disabled="@(scan is not { NewCount: > 0 })">Confirm Import</button>
     </div>
-    <p class="module-note">The scan is on-demand only. Import preserves router settings; new records are assigned UNKNOWN NAP until reviewed. Usernames already in Netora are skipped and never overwritten.</p>
+    <p class="module-note">Import preserves router settings and assigns new records to UNKNOWN NAP. Usernames linked to existing, unarchived customers are skipped.</p>
 </section>
 
 <section class="panel module-panel">
@@ -59,12 +69,17 @@
     }
     else if (scan.Items.Count == 0)
     {
-        <div class="detail-empty">The router has no PPP secrets.</div>
+        <div class="detail-empty">@(mock ? "The mock router has no PPP secrets." : "The MikroTik router returned no PPP secrets.")</div>
     }
     else
     {
+        @if (scan.NewCount == 0)
+        {
+            <p class="module-note">No accounts are eligible to import. Review the reason shown beside each account.</p>
+        }
         <form id="importForm" method="post" action="/pppoe/import" data-confirm="Import the selected accounts into Netora?">
             @Html.AntiForgeryToken()
+            <input type="hidden" name="previewMode" value="@scan.Mode">
             <div class="table-scroll">
                 <table class="customers-table all-table">
                     <thead><tr><th>Select</th><th>PPPoE Username</th><th>Profile</th><th>Existing SQL Record</th><th>NAP Assignment</th></tr></thead>

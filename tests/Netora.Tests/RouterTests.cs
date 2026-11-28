@@ -21,6 +21,8 @@ public sealed class FakeRouter : IRouterClient
     public List<RouterSecret> Secrets { get; } = [];
     public int Creates { get; private set; }
     public int Updates { get; private set; }
+    public int Deletes { get; private set; }
+    public bool LoseDeleteResponse { get; set; }
     public bool Down { get; set; }
     public HashSet<string> Online { get; } = [];
     private int next = 1;
@@ -31,10 +33,11 @@ public sealed class FakeRouter : IRouterClient
         ? throw new RouterException(RouterErrorKind.Unreachable, "down")
         : Task.FromResult(new RouterIdentity("Test", "7.16", null));
 
-    public Task<IReadOnlyList<RouterSecret>> ListSecretsAsync(CancellationToken ct)
+    public Task<IReadOnlyList<RouterSecret>> ListSecretsAsync(CancellationToken ct, bool includePasswords = true)
     {
         Check();
-        return Task.FromResult<IReadOnlyList<RouterSecret>>(Secrets.ToList());
+        return Task.FromResult<IReadOnlyList<RouterSecret>>(Secrets
+            .Select(secret => includePasswords ? secret : secret with { Password = null }).ToList());
     }
 
     public Task<RouterSecret?> FindSecretAsync(string? id, string name, CancellationToken ct)
@@ -60,6 +63,17 @@ public sealed class FakeRouter : IRouterClient
         var old = Secrets[i];
         Secrets[i] = old with { Name = w.Name, Password = w.Password ?? old.Password, Profile = w.Profile, Disabled = w.Disabled, Comment = w.Comment };
         return Task.FromResult(Secrets[i]);
+    }
+
+    public Task DeleteSecretAsync(string id, CancellationToken cancellationToken)
+    {
+        Check();
+        if (Secrets.RemoveAll(s => s.Id == id) == 0)
+            throw new RouterException(RouterErrorKind.NotFound, "The router has no such record.");
+        Deletes++;
+        if (LoseDeleteResponse)
+            throw new RouterException(RouterErrorKind.Timeout, "The router did not answer in time.");
+        return Task.CompletedTask;
     }
 
     public Task<RouterActiveSession?> FindActiveSessionAsync(string name, CancellationToken ct)
@@ -148,6 +162,29 @@ public class RouterTests
     private static void SetPassword(Customer c) => c.PppoePasswordProtected = new PppoePasswordProtector(Keys).Protect("Secret#123");
 
     // ----- 04.02 create after approval -----
+
+    [Fact]
+    public async Task Legacy_password_masks_never_overwrite_router_credentials()
+    {
+        using var t = new TestDb();
+        var ids = t.Seed();
+        var router = new FakeRouter();
+        router.Add("maria_santos", "Fiber 100 Mbps", password: "Actual#Password");
+        var protector = new PppoePasswordProtector(Keys);
+        var disable = await ApprovedAsync(t, ids.Normal, ApprovalOperation.DisablePppoe,
+            customer =>
+            {
+                customer.PppoePasswordProtected = protector.Protect("*****");
+                customer.Status = CustomerStatus.Disabled;
+            });
+        var create = await ApprovedAsync(t, ids.Pending, ApprovalOperation.CreatePppoe,
+            customer => customer.PppoePasswordProtected = protector.Protect("*****"));
+
+        Assert.Equal("Succeeded", (await ProvisionAsync(t, router, disable)).Status);
+        Assert.Equal("Actual#Password", Assert.Single(router.Secrets).Password);
+        Assert.Equal("Failed", (await ProvisionAsync(t, router, create)).Status);
+        Assert.Equal(0, router.Creates);
+    }
 
     [Fact]
     public async Task Approved_creation_creates_the_secret_once_and_marks_it_synced()
@@ -342,6 +379,27 @@ public class RouterTests
     }
 
     [Fact]
+    public async Task Status_reports_router_addresses_and_profile_defaults_when_the_account_is_offline()
+    {
+        using var fixture = new TestDb();
+        var ids = fixture.Seed();
+        var router = new FakeRouter();
+        router.Profiles.Add(new("*P1", "Fiber 100 Mbps", null, "10.12.0.1", "subscriber-pool"));
+        router.Add("maria_santos", "Fiber 100 Mbps");
+        await using var db = fixture.NewContext();
+        var service = new RouterStatusService(db, router);
+
+        var inherited = (await service.CheckAsync(ids.Normal, true, default))!;
+        Assert.False(inherited.SessionActive);
+        Assert.Null(inherited.AssignedIp);
+        Assert.Equal(new PppoeRouterAddressesDto("10.12.0.1", "subscriber-pool", true, true), inherited.Addresses);
+
+        router.Secrets[0] = router.Secrets[0] with { RemoteAddress = "10.12.0.42" };
+        var overridden = (await service.CheckAsync(ids.Normal, true, default))!;
+        Assert.Equal(new PppoeRouterAddressesDto("10.12.0.1", "10.12.0.42", true, false), overridden.Addresses);
+    }
+
+    [Fact]
     public async Task Status_flags_missing_secrets_hides_manager_only_and_survives_a_dead_router()
     {
         var t = new TestDb(); var ids = t.Seed();
@@ -363,6 +421,20 @@ public class RouterTests
     }
 
     // ----- 04.04 import -----
+
+    [Fact]
+    public async Task Import_does_not_save_a_router_password_mask()
+    {
+        using var fixture = new TestDb();
+        var router = new FakeRouter();
+        router.Add("masked_import", "Fiber 50 Mbps", password: "*****");
+        await using var db = fixture.NewContext();
+        var import = new PppoeImportService(db, router, new PppoePasswordProtector(Keys),
+            NullLogger<PppoeImportService>.Instance);
+
+        Assert.Equal(1, (await import.ImportAsync(new ImportRequest(["masked_import"]), "manager", "manager", default)).Imported);
+        Assert.Null((await db.Customers.SingleAsync()).PppoePasswordProtected);
+    }
 
     [Fact]
     public async Task Import_scans_on_demand_skips_existing_usernames_and_imports_with_unknown_nap()
@@ -407,6 +479,36 @@ public class RouterTests
     }
 
     // ----- helpers -----
+
+    [Fact]
+    public async Task Import_reuses_an_archived_username_and_lists_the_new_customer_and_account()
+    {
+        using var fixture = new TestDb();
+        var ids = fixture.Seed();
+        await using var db = fixture.NewContext();
+        var archived = await db.Customers.SingleAsync(c => c.Id == ids.Normal);
+        archived.Status = CustomerStatus.Terminated;
+        archived.PppoeDeletedAtUtc = DateTimeOffset.UtcNow;
+        archived.DeletedAtUtc = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync();
+
+        var username = archived.PppoeUsername;
+        var router = new FakeRouter();
+        router.Add(username, "Fiber 100 Mbps");
+        var import = new PppoeImportService(db, router, new PppoePasswordProtector(Keys),
+            NullLogger<PppoeImportService>.Instance);
+
+        Assert.Equal("New", Assert.Single((await import.ScanAsync(default)).Items).State);
+        Assert.Equal(1, (await import.ImportAsync(new ImportRequest([username]), "manager", "manager", default)).Imported);
+
+        var customer = Assert.Single((await fixture.Queries(db).ListAsync(new(Search: username), true, default)).Items);
+        var account = Assert.Single((await new PppoeQueries(db).ListAsync(new(Search: username), true, default)).Items);
+        Assert.NotEqual(archived.Id, customer.Id);
+        Assert.Equal(customer.Id, account.CustomerId);
+        Assert.NotNull((await db.Customers.IgnoreQueryFilters().SingleAsync(c => c.Id == archived.Id)).DeletedAtUtc);
+        Assert.Equal(0, (await import.ImportAsync(new ImportRequest([username]), "manager", "manager", default)).Imported);
+        Assert.Equal(0, router.Creates + router.Updates + router.Deletes);
+    }
 
     [Theory]
     [InlineData("Home router [netora:NET-0005]", "Home router")]

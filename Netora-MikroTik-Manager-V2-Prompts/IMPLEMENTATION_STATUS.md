@@ -1,6 +1,6 @@
 # Netora V2 implementation tracking
 
-All 18 HTML designs approved as visual references; see the per-page status below.
+All 18 approved HTML references now have Razor pages connected to the Web API. The visual QA column records prior checks where available. A fresh desktop and mobile comparison in both themes across the full set remains open.
 
 | Page | Mockup approved | Razor view | API integrated | Permissions tested | Visual QA | Status |
 |---|---|---|---|---|---|---|
@@ -16,12 +16,12 @@ All 18 HTML designs approved as visual references; see the per-page status below
 | Internet Plans | Yes | Yes (`/plans`, `/plans/new`, `/plans/{id}/edit`, `/plans/router-check`) | Yes (`/api/v1/plans`) | Yes (Staff: view only, add/edit/router check 403; counts leave out Manager-only customers) | Screenshots 1440px light/dark and 390px compared with `plans.html` | Done (2026-11-26). Add/Edit form has no mockup (shared form styles). |
 | ONU History | Yes | Yes (`/onu-history`) | Yes (`GET /api/v1/onu-history`, `POST /api/v1/onu-history/{customerId}/replacements`) | Yes (hidden accounts return 404; terminated customers are read-only for Staff) | Browser smoke check | Implemented. Current device, previous and new device history, date, reason, and operator. |
 | Diagnostics | Yes | Yes (`/diagnostics`) | Yes (`GET /api/v1/customers/{customerId}/diagnostics`) | Yes (hidden accounts return 404) | Browser smoke check with mock router | Implemented. On-demand session, recognized RouterOS log events, and SQL/router mismatch checks. |
-| Audit Trail | Yes | Yes (`/audit`) | Yes (`GET /api/v1/audit`) | Yes (Managers only: sidebar hidden, page 403, API ManagerOnly; anonymous 401) | Screenshots 1440px light/dark and 390px compared with `audit.html` | Done (2026-11-27). See Module 12 section. Backups not started (postponed by the user). |
+| Audit Trail | Yes | Yes (`/audit`) | Yes (`GET /api/v1/audit`) | Yes (Managers only: sidebar hidden, page 403, API ManagerOnly; anonymous 401) | Screenshots 1440px light/dark and 390px compared with `audit.html` | Implemented. SQL Server backup management is available on the separate Backups page. |
 | User Management | Yes | Yes (`/users`, `/users/new`, `/users/{id}/edit`, `/users/{id}/delete`) | Yes (`/api/v1/users`) | Yes (Staff denied, sidebar hidden) | Original page compared with `users.html`; delete confirmation checked at desktop and mobile widths | Done. See Module 13 section. |
-| Settings | Yes | Yes (`/settings`) | Yes (`/api/v1/settings`) | Yes (Managers only) | Screenshot 1440px light compared with `settings.html` | Done except connecting to the router (module 09). See Module 13 section. |
-| Reports | Yes | No | No | No | No | Not started |
-| Backups | Yes | No | No | No | No | Not started |
-| Notifications | Yes | No | No | No | No | Not started |
+| Settings | Yes | Yes (`/settings`) | Yes (`/api/v1/settings`) | Yes (Managers only) | Screenshot 1440px light compared with `settings.html` | Implemented. Includes RouterOS mode and connection testing, and editable SMTP configuration. |
+| Reports | Yes | Yes (`/reports`) | Yes (`GET /api/v1/reports`) | Staff filtering covered by automated tests | Code and build checked | Subscriber and provisioning summaries, month filters, and CSV export. |
+| Backups | Yes | Yes (`/backups`) | Yes (`/api/v1/backups` history, settings, and run) | Manager-only routes and sidebar link | Code and build checked | SQL Server history and Manager-controlled manual and daily backups. A live run and restore remain unverified. |
+| Notifications | Yes | Yes (`/notifications`) | Yes (`GET /api/v1/notifications`) | Staff and Manager visibility covered by automated tests | Code and build checked | Pending approvals, decisions, router outcomes, and recorded approval-email delivery states. |
 
 ## Foundation progress (2026-11-24)
 | Item | Status | Evidence / remaining issues |
@@ -166,3 +166,24 @@ Rules accepted by the user on 2026-11-27: one list over the records Netora alrea
 | 11 Dashboard | Four approved cards plus recent activity. Total includes terminated records and Staff see only permitted customer records. Router results include a check time and identify mock mode. |
 
 Apply the `OnuHistoryAndTokenRevocation` migration before running the updated hosts against SQL Server. The new pages were checked using a local fixture with the mock router. Real RouterOS log retrieval remains to be verified on hardware.
+
+## Module 04.06 PPPoE deletion (2026-11-27)
+
+Managers can select Delete from PPPoE Management, the Customers list, or Customer Details and confirm the account. Netora verifies the router secret belongs to that customer before removing it. After the router confirms removal or absence, Netora clears the stored PPPoE credentials, removes the account from PPPoE Management, closes any pending approval, and retains the terminated customer and history. The Customers list identifies archived PPPoE accounts as Deleted. A failed router operation can be retried from Approval Details.
+
+Completion appears in the Audit Trail and the file log as `AccountDeleted`. With email enabled, the completion notice goes to all active Managers with an email address. The `PppoeAccountDeletion` migration was applied to development SQL Server. The build and 185 automated tests passed. Browser checks at 1440px and 390px used a mock router and a local SMTP relay to verify permissions, confirmation, removal, audit logging, and both Manager recipients.
+
+## Module 03.06 Customer deletion (2026-11-27)
+
+Managers can select Delete Customer from Customers or Customer Details. Netora requires a completed PPPoE deletion and rechecks the configured router by username and Netora marker. An existing secret, unavailable router, or stale confirmation blocks the operation. Deletion removes the customer from operational screens and counts, preserves historical records, and records the action in the Audit Trail and file log. The `CustomerDeletion` migration is applied to development SQL Server. The build and all 190 tests passed. A local API smoke test with the mock router also verified the blocked and successful flows.
+
+## Module 13.02 Email Configuration (2026-11-28)
+
+Managers can save the SMTP host, port, login, password, TLS mode, timeout and certificate revocation check alongside the sender, links and email toggle. Settings and passwords use the existing AppSettings table, with the password encrypted and write-only. Saved settings supersede legacy configuration. The same saved configuration is used for background notifications and the test email.
+
+## Modules 12.02 and 16 Reports, Backups, and Notifications
+
+- Reports loads four SQL-backed summaries and exports the same permission-filtered rows as CSV. Date filters use Singapore time. Subscriber summaries use creation dates and provisioning uses approval dates.
+- Notifications lists pending Manager approvals, requester decisions and provisioning outcomes, and approval-email delivery states recorded after the migration. The bell opens the notifications list.
+- Backups is Manager-only. It shows completed SQL Server history and the latest Netora run. It accepts a SQL Server host directory, runs manual copies, and supports a daily Singapore-time schedule. SQL Server storage access, retention on the backup host, and an isolated restore drill are deployment tasks.
+- Migration `OperationsPageHistory` applied to development SQL Server. Verification used automated role-visibility and backup validation tests, development SQL report and history queries, and a build of the Razor views. Live backup and email delivery were not triggered.

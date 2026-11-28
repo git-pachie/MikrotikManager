@@ -26,6 +26,10 @@
 {
     <div class="form-success" role="status">@toast</div>
 }
+@if (TempData[Netora.WebUI.Controllers.CustomersController.ErrorKey] is string error)
+{
+    <div class="form-alert" role="alert">@error</div>
+}
 
 @if (data is null)
 {
@@ -115,7 +119,10 @@
                     <tr>
                         <td>@rowNumber</td>
                         <td class="name"><a class="customer-link" href="/customers/@c.Id">@c.Name</a></td>
-                        <td>@c.PppoeUsername</td>
+                        <td>
+                            @c.PppoeUsername
+                            @if (c.PppoeDeleted) { <span class="pill terminated">Deleted</span> }
+                        </td>
                         <td>@c.PlanName</td>
                         <td><span class="pill @(unknownNap ? "unknown" : "nap")">@c.NapBox</span></td>
                         <td>@(string.IsNullOrEmpty(c.OnuSerial) ? "—" : c.OnuSerial)</td>
@@ -140,7 +147,16 @@
                                     <a class="action-btn primary" href="/customers/@c.Id/edit" title="Edit customer" aria-label="Edit @c.Name"><svg class="icon"><use href="#edit" /></svg></a>
                                 }
                                 <a class="action-btn" href="/diagnostics?customerId=@c.Id" title="Diagnostics" aria-label="Diagnostics for @c.PppoeUsername"><svg class="icon"><use href="#pulse" /></svg></a>
-                                <button type="button" class="action-btn" disabled title="More actions: @later.ToLowerInvariant()" aria-label="More actions for @c.Name"><svg class="icon"><use href="#more" /></svg></button>
+                                @if (c.CanDeletePppoe)
+                                {
+                                    <a class="btn btn-outline" href="/pppoe/@c.Id/delete?from=customers"
+                                       aria-label="Delete PPPoE account for @c.Name" title="Delete PPPoE account">Delete PPPoE</a>
+                                }
+                                @if (User.IsInRole("Manager"))
+                                {
+                                    <a class="btn btn-outline" href="/customers/@c.Id/delete"
+                                       aria-label="Delete customer @c.Name">Delete Customer</a>
+                                }
                             </div>
                         </td>
                     </tr>

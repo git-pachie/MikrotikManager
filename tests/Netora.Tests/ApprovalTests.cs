@@ -6,6 +6,8 @@ using Netora.Domain.Customers;
 using Netora.Infrastructure.Approvals;
 using Netora.Infrastructure.Persistence;
 using Netora.Infrastructure.Pppoe;
+using Netora.Infrastructure.Router;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Netora.Tests;
 
@@ -62,19 +64,40 @@ public class ApprovalTests
     }
 
     [Fact]
-    public async Task Creation_is_approved_only_after_a_password_is_set()
+    public async Task Saved_pppoe_password_is_revealed_only_to_a_manager_for_an_existing_account()
+    {
+        using var t = new TestDb();
+        var id = await CreateCustomerAsync(t);
+        await SetPasswordAsync(t, id);
+        await using var db = t.NewContext();
+        var commands = t.PppoeCommands(db);
+
+        var denied = await commands.RevealPasswordAsync(id, TestDb.Staff, default);
+        Assert.Equal(PppoeOutcome.Forbidden, denied.Outcome);
+        Assert.Null(denied.Value);
+        var revealed = await commands.RevealPasswordAsync(id, TestDb.Manager, default);
+        Assert.Equal("Secret#123", revealed.Value!.Password);
+        Assert.DoesNotContain("Secret#123", revealed.ToString());
+
+        var customer = await db.Customers.SingleAsync(c => c.Id == id);
+        customer.PppoePasswordProtected = "unreadable";
+        await db.SaveChangesAsync();
+        var unreadable = await commands.RevealPasswordAsync(id, TestDb.Manager, default);
+        Assert.Equal(PppoeOutcome.PasswordUnavailable, unreadable.Outcome);
+        Assert.Null(unreadable.Value);
+
+        customer.PppoeDeletedAtUtc = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync();
+        Assert.Equal(PppoeOutcome.NotFound, (await commands.RevealPasswordAsync(id, TestDb.Manager, default)).Outcome);
+    }
+
+    [Fact]
+    public async Task Creation_uses_the_default_password_when_no_password_was_entered()
     {
         var t = new TestDb();
         var id = await CreateCustomerAsync(t);
         var request = await PendingOf(t, id);
 
-        await using (var db = t.NewContext())
-        {
-            var blocked = await Approvals(t, db).DecideAsync(request.Id, new DecidePppoeRequest(true, null), TestDb.Manager, default);
-            Assert.Equal(PppoeOutcome.PasswordRequired, blocked.Outcome);
-        }
-
-        await SetPasswordAsync(t, id);
         await using (var db = t.NewContext())
         {
             var ok = await Approvals(t, db).DecideAsync(request.Id, new DecidePppoeRequest(true, "Looks good"), TestDb.Manager, default);
@@ -86,8 +109,58 @@ public class ApprovalTests
         var customer = await CustomerOf(t, id);
         Assert.Equal(CustomerStatus.Active, customer.Status);
         Assert.Equal(RouterSyncStatus.NotSent, customer.RouterSyncStatus);
+        Assert.Equal("12345678", t.Passwords.Unprotect(customer.PppoePasswordProtected!));
         Assert.Single(t.Notifier.Decided);
         Assert.Equal(ApprovalStatus.Approved, t.Notifier.Decided[0].Status);
+        Assert.Equal(customer.PppoePasswordProtected, Assert.Single(t.Notifier.Creations).ProtectedPassword);
+    }
+
+    [Fact]
+    public async Task Creation_approval_applies_popup_values_to_the_router_and_admin_notice()
+    {
+        using var t = new TestDb();
+        var id = await CreateCustomerAsync(t);
+        var request = await PendingOf(t, id);
+        await using var db = t.NewContext();
+        var router = new FakeRouter();
+        router.Profiles.Add(new("*P1", "Fiber 100 Mbps", null, "10.12.0.1"));
+        var queries = new ApprovalQueries(db, router);
+        Assert.Null((await queries.GetAsync(request.Id, false, default))!.Creation);
+        var options = (await queries.GetAsync(request.Id, true, default))!.Creation!;
+        var profile = Assert.Single(options.Profiles, p => p.Profile == "Fiber 100 Mbps");
+        Assert.Equal("10.12.0.1", profile.LocalAddress);
+
+        var provisioner = new RouterProvisioner(db, router, t.Passwords, NullLogger<RouterProvisioner>.Instance);
+        var commands = new ApprovalCommands(new ApprovalRepository(db), t.PppoeCommands(db, provisioner), provisioner);
+        var input = new CreatePppoeApprovalInput(profile.PlanId, "NAP-02", "Custom#Password", null,
+            "10.12.0.42", options.ConcurrencyStamp);
+        var masked = await commands.DecideAsync(request.Id, new(true, null, input with { NewPassword = "********" }), TestDb.Manager, default);
+        Assert.Equal(PppoeOutcome.ValidationFailed, masked.Outcome);
+        var invalid = await commands.DecideAsync(request.Id, new(true, null, input with { RemoteAddress = "invalid" }), TestDb.Manager, default);
+        Assert.Equal(PppoeOutcome.ValidationFailed, invalid.Outcome);
+        Assert.Empty(t.Notifier.Creations);
+
+        var result = await commands.DecideAsync(request.Id, new(true, null, input), TestDb.Manager, default);
+        Assert.Equal("Succeeded", result.Request!.ProvisioningStatus);
+        var secret = Assert.Single(router.Secrets);
+        Assert.Equal("Fiber 100 Mbps", secret.Profile);
+        Assert.Equal("Custom#Password", secret.Password);
+        Assert.Null(secret.LocalAddress);  // RouterOS uses the profile default when the secret has no override.
+        Assert.Equal("10.12.0.42", secret.RemoteAddress);
+        Assert.Equal("NAP-02", (await CustomerOf(t, id)).Nap.Code);
+
+        var notice = new QueuedApprovalNotice(ApprovalNoticeKind.PppoeCreationApproved,
+            Assert.Single(t.Notifier.Decided), Details: Assert.Single(t.Notifier.Creations));
+        var (_, body) = ApprovalEmailDispatcher.Compose(notice, new EmailOptions(), t.Passwords);
+        Assert.Contains("Account Name: Ana Reyes", body);
+        Assert.Contains("Address: 1 Sample St", body);
+        Assert.Contains("Mobile: 0917 555 0101", body);
+        Assert.Contains("PPPoE Username: new_user", body);
+        Assert.Contains("Password: Custom#Password", body);
+        Assert.Contains("Remote IP: 10.12.0.42", body);
+        Assert.Equal(PppoeOutcome.AlreadyDecided,
+            (await commands.DecideAsync(request.Id, new(true, null, input), TestDb.Manager, default)).Outcome);
+        Assert.Single(t.Notifier.Creations);
     }
 
     [Fact]
@@ -114,6 +187,7 @@ public class ApprovalTests
         await using var check = t.NewContext();
         Assert.Equal("Enabled, username renamed_user, plan Fiber 100 Mbps",
             (await check.ApprovalRequests.SingleAsync(r => r.Id == request.Id)).After);
+        Assert.Equal("Secret#123", t.Passwords.Unprotect(Assert.Single(t.Notifier.Creations).ProtectedPassword));
     }
 
     [Fact]

@@ -155,6 +155,39 @@ namespace Netora.Infrastructure.Persistence.Migrations
                     b.ToTable("AspNetUserTokens", (string)null);
                 });
 
+            modelBuilder.Entity("Netora.Domain.Approvals.ApprovalEmailDelivery", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<long>("RequestId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OccurredAtUtc");
+
+                    b.HasIndex("RequestId");
+
+                    b.ToTable("ApprovalEmailDeliveries");
+                });
+
             modelBuilder.Entity("Netora.Domain.Approvals.ApprovalRequest", b =>
                 {
                     b.Property<long>("Id")
@@ -333,6 +366,9 @@ namespace Netora.Infrastructure.Persistence.Migrations
                         .HasMaxLength(450)
                         .HasColumnType("nvarchar(450)");
 
+                    b.Property<DateTimeOffset?>("DeletedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<string>("Email")
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
@@ -379,6 +415,12 @@ namespace Netora.Infrastructure.Persistence.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
+                    b.Property<DateTimeOffset?>("PppoeDeletedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("PppoeDeletionRequestedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<string>("PppoeLocalAddress")
                         .HasMaxLength(45)
                         .HasColumnType("nvarchar(45)");
@@ -424,7 +466,8 @@ namespace Netora.Infrastructure.Persistence.Migrations
                     b.HasIndex("PlanId");
 
                     b.HasIndex("PppoeUsername")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasFilter("[DeletedAtUtc] IS NULL");
 
                     b.HasIndex("IsManagerOnly", "Status");
 
@@ -794,6 +837,37 @@ namespace Netora.Infrastructure.Persistence.Migrations
                     b.ToTable("AppSettings", (string)null);
                 });
 
+            modelBuilder.Entity("Netora.Domain.Settings.BackupRun", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("ActorUserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<bool>("Scheduled")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTimeOffset>("StartedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Scheduled", "StartedAtUtc");
+
+                    b.ToTable("BackupRuns");
+                });
+
             modelBuilder.Entity("Netora.Infrastructure.Identity.ApplicationUser", b =>
                 {
                     b.Property<string>("Id")
@@ -927,6 +1001,15 @@ namespace Netora.Infrastructure.Persistence.Migrations
                     b.HasOne("Netora.Infrastructure.Identity.ApplicationUser", null)
                         .WithMany()
                         .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Netora.Domain.Approvals.ApprovalEmailDelivery", b =>
+                {
+                    b.HasOne("Netora.Domain.Approvals.ApprovalRequest", null)
+                        .WithMany()
+                        .HasForeignKey("RequestId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

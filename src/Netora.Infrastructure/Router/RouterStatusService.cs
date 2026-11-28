@@ -51,14 +51,16 @@ internal sealed class RouterStatusService(NetoraDbContext db, IRouterClient rout
         CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.UtcNow;
-        var expected = c.Status != CustomerStatus.PendingApproval;
+        var expected = c.PppoeDeletedAtUtc is null && c.Status != CustomerStatus.PendingApproval;
         try
         {
             var secret = await router.FindSecretAsync(c.RouterSecretId, c.PppoeUsername, routerToken);
             var session = secret is null || !checkSession ? null : await router.FindActiveSessionAsync(secret.Name, routerToken);
+            var addresses = secret is not null && string.Equals(secret.Name, c.PppoeUsername, StringComparison.Ordinal)
+                ? await GetAddressesAsync(secret, routerToken, cancellationToken) : null;
             return new RouterStatusDto(router.Mode, true, null, now, secret is not null, expected,
                 secret is null ? null : secret.Disabled ? "Disabled" : "Enabled",
-                session is not null, session?.Address, session?.Uptime, secret?.Profile, c.Plan.RouterProfile, Compare(c, secret));
+                session is not null, session?.Address, session?.Uptime, secret?.Profile, c.Plan.RouterProfile, Compare(c, secret), addresses);
         }
         catch (RouterException ex)
         {
@@ -76,6 +78,37 @@ internal sealed class RouterStatusService(NetoraDbContext db, IRouterClient rout
                 ActivityLevel.Warning));
             return new RouterStatusDto(router.Mode, false, DiagnosticError(kind), now, false, expected, null, false, null, null, null, c.Plan.RouterProfile, []);
         }
+    }
+
+    private async Task<PppoeRouterAddressesDto> GetAddressesAsync(RouterSecret secret, CancellationToken routerToken,
+        CancellationToken cancellationToken)
+    {
+        var local = AddressOrNull(secret.LocalAddress);
+        var remote = AddressOrNull(secret.RemoteAddress);
+        RouterPppProfile? profile = null;
+        if ((local is null || remote is null) && !string.IsNullOrWhiteSpace(secret.Profile))
+        {
+            using var profileBudget = CancellationTokenSource.CreateLinkedTokenSource(routerToken);
+            profileBudget.CancelAfter(TimeSpan.FromSeconds(2));
+            try
+            {
+                var profiles = await router.ListProfilesAsync(profileBudget.Token);
+                profile = profiles.FirstOrDefault(p => p.Name == secret.Profile);
+            }
+            catch (RouterException)
+            {
+                // Keep the secret and session status when profile settings are unavailable.
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+            }
+        }
+
+        var profileLocal = local is null ? AddressOrNull(profile?.LocalAddress) : null;
+        var profileRemote = remote is null ? AddressOrNull(profile?.RemoteAddress) : null;
+        return new(local ?? profileLocal, remote ?? profileRemote, profileLocal is not null, profileRemote is not null);
+
+        static string? AddressOrNull(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 
     private static CancellationTokenSource RouterReadBudget(CancellationToken cancellationToken)
@@ -98,6 +131,12 @@ internal sealed class RouterStatusService(NetoraDbContext db, IRouterClient rout
     internal static List<RouterMismatchDto> Compare(Customer c, RouterSecret? secret)
     {
         var list = new List<RouterMismatchDto>();
+        if (c.PppoeDeletedAtUtc is not null)
+        {
+            if (secret is not null)
+                list.Add(new("PPPoE secret", "Deleted", "Exists on the router"));
+            return list;
+        }
         if (c.Status == CustomerStatus.PendingApproval)
         {
             if (secret is not null)

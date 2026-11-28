@@ -58,12 +58,15 @@ internal sealed class CustomerQueries(NetoraDbContext db, IOptions<AttachmentOpt
             .Select(c => new
             {
                 c.Id, c.FirstName, c.LastName, c.PppoeUsername, PlanName = c.Plan.Name, NapBox = c.Nap.Code, c.OnuSerial, c.Status, c.CreatedAtUtc,
+                c.PppoeDeletionRequestedAtUtc, c.PppoeDeletedAtUtc,
             })
             .ToListAsync(cancellationToken);
 
         var items = rows.Select(c => new CustomerListItemDto(
                 c.Id, $"{c.LastName}, {c.FirstName}", c.PppoeUsername, c.PlanName, c.NapBox, c.OnuSerial,
-                c.Status.ToString(), c.CreatedAtUtc))
+                c.Status.ToString(), c.CreatedAtUtc,
+                includeManagerOnly && c.PppoeDeletionRequestedAtUtc is null && c.PppoeDeletedAtUtc is null,
+                c.PppoeDeletedAtUtc is not null))
             .ToList();
 
         return new CustomerListDto(items, totalMatching, page, pageSize, stats, napOptions, planOptions, containsSample);
@@ -108,7 +111,10 @@ internal sealed class CustomerQueries(NetoraDbContext db, IOptions<AttachmentOpt
             customer.OnuSerial, customer.OnuModel, customer.Status.ToString(), customer.IsManagerOnly,
             customer.CreatedAtUtc, customer.UpdatedAtUtc, customer.ConcurrencyStamp,
             customer.CanBeChangedBy(viewerIsManager), customer.ServiceFieldsLocked, activity, attachments,
-            attachmentOptions.Value.MaxFileSizeBytes);
+            attachmentOptions.Value.MaxFileSizeBytes, customer.PppoeDeletedAtUtc is not null,
+            viewerIsManager && customer.PppoeDeletionRequestedAtUtc is null && customer.PppoeDeletedAtUtc is null,
+            customer.PppoeLocalAddress, customer.PppoeRemoteAddress,
+            customer.PppoeDeletedAtUtc is null && !string.IsNullOrEmpty(customer.PppoePasswordProtected));
     }
 
     public Task<bool> IsManagerOnlyAsync(int id, CancellationToken cancellationToken)

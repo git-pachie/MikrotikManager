@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using FluentValidation;
 using Microsoft.Extensions.Logging;
 using Netora.Application.Approvals;
@@ -15,7 +16,7 @@ namespace Netora.Application.Pppoe;
 /// A Manager's own request is approved by that Manager at once.</item>
 /// <item>Changes are stored in the database and marked "not sent to router"; the router is updated by module 09.</item>
 /// <item>Module 08 adds Create (opened when a customer is added; always waits for a Manager), Change Plan (Active accounts)
-/// and Terminate (Active or Disabled). A create request is approved only once a PPPoE password is set.</item>
+/// and Terminate (Active or Disabled). The Manager can set account details when approving creation.</item>
 /// </list>
 /// </summary>
 internal sealed class PppoeCommands(
@@ -27,6 +28,48 @@ internal sealed class PppoeCommands(
     Router.IRouterProvisioner provisioner,
     ILogger<PppoeCommands> logger) : IPppoeCommands
 {
+    public async Task<PppoePasswordResult> RevealPasswordAsync(int customerId, CustomerActor actor, CancellationToken cancellationToken)
+    {
+        if (!actor.IsManager) return new(PppoeOutcome.Forbidden);
+        var customer = await customers.FindForUpdateAsync(customerId, includeManagerOnly: true, cancellationToken);
+        if (customer is null || customer.PppoeDeletedAtUtc is not null) return new(PppoeOutcome.NotFound);
+        if (string.IsNullOrEmpty(customer.PppoePasswordProtected)) return new(PppoeOutcome.PasswordUnavailable);
+
+        try
+        {
+            var password = passwords.Unprotect(customer.PppoePasswordProtected);
+            if (PppoePasswordMask.IsMasked(password)) return new(PppoeOutcome.PasswordUnavailable);
+            logger.LogInformation("PppoePasswordRevealed CustomerId={CustomerId} ActorUserId={ActorUserId}", customerId, actor.UserId);
+            return new(PppoeOutcome.Ok, new(password));
+        }
+        catch (CryptographicException)
+        {
+            return new(PppoeOutcome.PasswordUnavailable);
+        }
+    }
+
+    public async Task<PppoeResult> DeleteAsync(int customerId, DeletePppoeRequest request, CustomerActor actor,
+        CancellationToken cancellationToken)
+    {
+        if (!actor.IsManager) return new(PppoeOutcome.Forbidden);
+        var customer = await customers.FindForUpdateAsync(customerId, includeManagerOnly: true, cancellationToken);
+        if (customer is null || customer.PppoeDeletedAtUtc is not null) return new(PppoeOutcome.NotFound);
+        if (customer.PppoeDeletionRequestedAtUtc is not null) return new(PppoeOutcome.DeletionInProgress);
+        if (!string.Equals(customer.ConcurrencyStamp, request.ConcurrencyStamp, StringComparison.Ordinal))
+            return new(PppoeOutcome.Conflict);
+
+        var now = DateTimeOffset.UtcNow;
+        var approval = PppoeStates.NewRequest(customer, ApprovalOperation.DeletePppoe, null, null, actor, now);
+        MarkApproved(approval, actor, now, null);
+        customer.PppoeDeletionRequestedAtUtc = now;
+        customer.RouterSyncStatus = RouterSyncStatus.NotSent;
+        var activities = new[] { Activity(customerId, "PppoeDeleteApproved", null, actor, now, "Approved") };
+        if (!await approvals.AddAsync(approval, customer, request.ConcurrencyStamp, activities, cancellationToken))
+            return new(PppoeOutcome.Conflict);
+
+        return new(PppoeOutcome.Ok, Request: await ProvisionIfApprovedAsync(approval, actor, cancellationToken));
+    }
+
     public async Task<PppoeResult> UpdateAsync(int customerId, UpdatePppoeRequest request, CustomerActor actor,
         CancellationToken cancellationToken)
     {
@@ -38,7 +81,8 @@ internal sealed class PppoeCommands(
         }
 
         var customer = await customers.FindForUpdateAsync(customerId, actor.IsManager, cancellationToken);
-        if (customer is null) return new(PppoeOutcome.NotFound);
+        if (customer is null || customer.PppoeDeletedAtUtc is not null) return new(PppoeOutcome.NotFound);
+        if (customer.PppoeDeletionRequestedAtUtc is not null) return new(PppoeOutcome.DeletionInProgress);
         if (customer.Status == CustomerStatus.Active) return new(PppoeOutcome.AccountActive);
         if (!customer.PppoeDetailsEditableBy(actor.IsManager)) return new(PppoeOutcome.CustomerLocked);
         if (!string.Equals(request.ConcurrencyStamp, customer.ConcurrencyStamp, StringComparison.Ordinal))
@@ -132,7 +176,8 @@ internal sealed class PppoeCommands(
         }
 
         var customer = await customers.FindForUpdateAsync(customerId, actor.IsManager, cancellationToken);
-        if (customer is null) return new(PppoeOutcome.NotFound);
+        if (customer is null || customer.PppoeDeletedAtUtc is not null) return new(PppoeOutcome.NotFound);
+        if (customer.PppoeDeletionRequestedAtUtc is not null) return new(PppoeOutcome.DeletionInProgress);
         if (!customer.CanBeChangedBy(actor.IsManager)) return new(PppoeOutcome.CustomerLocked);
         if (!PppoeStates.Fits(operation, customer.Status)) return new(PppoeOutcome.NotAllowedInCurrentState);
         if (operation == ApprovalOperation.ChangePlan && targetPlan!.Id == customer.PlanId)
@@ -163,7 +208,7 @@ internal sealed class PppoeCommands(
             activity.Add(Activity(customer.Id, $"Pppoe{label}Approved", "Not sent to router yet", actor, now));
         }
 
-        if (!await approvals.AddAsync(approval, changed, expectedStamp, activity, cancellationToken))
+        if (!await approvals.AddAsync(approval, changed ?? customer, expectedStamp ?? customer.ConcurrencyStamp, activity, cancellationToken))
             return new(PppoeOutcome.RequestAlreadyPending);
 
         logger.LogInformation("ApprovalRequestSubmitted CustomerId={CustomerId} RequestId={RequestId} Operation={Operation} Status={Status} ActorUserId={ActorUserId}",
@@ -201,7 +246,11 @@ internal sealed class PppoeCommands(
 
             // A create request is approved as the account is now (details may be edited while it waits).
             if (approval.Operation == ApprovalOperation.CreatePppoe)
+            {
+                var failure = await ApplyCreationSettingsAsync(customer, decision.Creation, cancellationToken);
+                if (failure is not null) return failure;
                 approval.After = PppoeStates.CreateSummary(customer);
+            }
 
             // The plan chosen at request time is applied, even if it was deactivated while the request waited.
             var targetPlan = approval.TargetPlanId is { } planId ? await customers.FindPlanByIdAsync(planId, cancellationToken) : null;
@@ -231,9 +280,66 @@ internal sealed class PppoeCommands(
         logger.LogInformation("ApprovalRequestDecided CustomerId={CustomerId} RequestId={RequestId} Operation={Operation} Status={Status} ActorUserId={ActorUserId}",
             customer.Id, approval.Id, approval.Operation, approval.Status, actor.UserId);
         Notify(() => notifier.RequestDecided(ApprovalNotice.From(approval)), approval.Id);
+        if (decision.Approve && approval.Operation == ApprovalOperation.CreatePppoe)
+        {
+            var details = new ApprovedPppoeDetails($"{customer.FirstName} {customer.LastName}".Trim(),
+                customer.Address, customer.MobileNumber, customer.PppoeUsername,
+                customer.PppoePasswordProtected!, customer.PppoeRemoteAddress);
+            Notify(() => notifier.PppoeCreationApproved(ApprovalNotice.From(approval), details), approval.Id);
+        }
         return new(PppoeOutcome.Ok, Request: await ProvisionIfApprovedAsync(approval, actor, cancellationToken));
     }
 
+    private async Task<PppoeResult?> ApplyCreationSettingsAsync(Customer customer, CreatePppoeApprovalInput? input,
+        CancellationToken cancellationToken)
+    {
+        if (input is not null)
+        {
+            if (input.ConcurrencyStamp != customer.ConcurrencyStamp)
+                return new(PppoeOutcome.Conflict);
+            if (PppoePasswordMask.IsMasked(input.NewPassword))
+                return Invalid(nameof(input.NewPassword), "Enter the actual PPPoE password instead of asterisks.");
+            if (!string.IsNullOrEmpty(input.NewPassword)
+                && (input.NewPassword.Length is < UpdatePppoeRequestValidator.PasswordMinLength or > UpdatePppoeRequestValidator.PasswordMaxLength
+                    || !input.NewPassword.All(UpdatePppoeRequestValidator.IsPasswordCharacter)))
+                return Invalid(nameof(input.NewPassword), "Use 8 to 64 letters, numbers or symbols without spaces.");
+            if (!UpdatePppoeRequestValidator.BeIPv4OrEmpty(input.LocalAddress))
+                return Invalid(nameof(input.LocalAddress), "Enter a valid local IPv4 address or leave it blank to inherit the profile setting.");
+            if (!UpdatePppoeRequestValidator.BeIPv4OrEmpty(input.RemoteAddress))
+                return Invalid(nameof(input.RemoteAddress), "Enter a valid remote IPv4 address or leave it blank.");
+
+            var plan = await customers.FindPlanByIdAsync(input.PlanId, cancellationToken);
+            if (plan is null || (!plan.IsActive && plan.Id != customer.PlanId))
+                return Invalid(nameof(input.PlanId), "Choose an available profile.");
+            var nap = input.NapCode is { Length: > 0 and <= 50 }
+                ? await customers.FindNapAsync(input.NapCode, cancellationToken) : null;
+            if (nap is null || (!nap.IsActive && nap.Id != customer.NapBoxId))
+                return Invalid(nameof(input.NapCode), "Choose an available NAP box.");
+
+            customer.SetPlan(plan);
+            customer.SetNap(nap);
+            customer.PppoeLocalAddress = Clean(input.LocalAddress);
+            customer.PppoeRemoteAddress = Clean(input.RemoteAddress);
+        }
+
+        if (input?.NewPassword is { Length: > 0 } supplied)
+            customer.PppoePasswordProtected = passwords.Protect(supplied);
+        else
+        {
+            string? saved = null;
+            if (!string.IsNullOrEmpty(customer.PppoePasswordProtected))
+            {
+                try { saved = passwords.Unprotect(customer.PppoePasswordProtected); }
+                catch (CryptographicException)
+                {
+                    return Invalid(nameof(CreatePppoeApprovalInput.NewPassword), "The saved PPPoE password cannot be read. Enter a new password.");
+                }
+            }
+            if (string.IsNullOrEmpty(saved) || PppoePasswordMask.IsMasked(saved))
+                customer.PppoePasswordProtected = passwords.Protect(CreatePppoeApprovalInput.DefaultPassword);
+        }
+        return null;
+    }
 
     /// <summary>
     /// The decision is saved first; only then is the change sent to the router (08.04). A router failure is recorded

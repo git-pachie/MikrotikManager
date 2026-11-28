@@ -19,6 +19,12 @@ namespace Netora.WebUI.Services;
 public interface INetoraApiClient
 {
     Task<ApiResponse<DashboardDto>> GetDashboardAsync(CancellationToken cancellationToken);
+    Task<ApiResponse<OperationsReportDto>> GetOperationsReportAsync(ReportType type, ReportRange range, CancellationToken ct);
+    Task<ApiResponse<IReadOnlyList<NotificationItemDto>>> GetNotificationsAsync(CancellationToken ct);
+    Task<ApiResponse<BackupHistoryDto>> GetBackupHistoryAsync(CancellationToken ct);
+    Task<ApiResponse<BackupSettingsDto>> GetBackupSettingsAsync(CancellationToken ct);
+    Task<ApiResponse<object>> SaveBackupSettingsAsync(UpdateBackupSettingsRequest request, CancellationToken ct);
+    Task<ApiResponse<object>> QueueBackupAsync(CancellationToken ct);
     Task<ApiResponse<OnuHistoryDto>> GetOnuHistoryAsync(int? customerId, string? search, int page, CancellationToken cancellationToken);
     Task<ApiResponse<object>> ReplaceOnuAsync(int customerId, ReplaceOnuRequest request, CancellationToken cancellationToken);
     Task<ApiResponse<PppoeDiagnosticsDto>> GetDiagnosticsAsync(int customerId, bool includeLogs, CancellationToken cancellationToken);
@@ -34,6 +40,7 @@ public interface INetoraApiClient
 
     Task<ApiResponse<CreatedCustomerDto>> CreateCustomerAsync(CreateCustomerRequest request, CancellationToken cancellationToken);
     Task<ApiResponse<CustomerDetailDto>> GetCustomerAsync(int id, CancellationToken cancellationToken);
+    Task<ApiResponse<object>> DeleteCustomerAsync(int id, DeleteCustomerRequest request, CancellationToken cancellationToken);
     Task<ApiResponse<UpdatedCustomerDto>> UpdateCustomerAsync(int id, UpdateCustomerRequest request, CancellationToken cancellationToken);
     Task<ApiResponse<AttachmentDto>> UploadAttachmentAsync(int customerId, Stream content, string fileName, CancellationToken cancellationToken);
     Task<ApiResponse<object>> DeleteAttachmentAsync(int customerId, long attachmentId, CancellationToken cancellationToken);
@@ -45,6 +52,8 @@ public interface INetoraApiClient
     Task<ApiFile> DownloadAttachmentAsync(int customerId, long attachmentId, CancellationToken cancellationToken);
     Task<ApiResponse<PppoeListDto>> GetPppoeAccountsAsync(PppoeListQuery query, CancellationToken cancellationToken);
     Task<ApiResponse<PppoeDetailDto>> GetPppoeAccountAsync(int customerId, CancellationToken cancellationToken);
+    Task<ApiResponse<PppoePasswordDto>> RevealPppoePasswordAsync(int customerId, CancellationToken cancellationToken);
+    Task<ApiResponse<ApprovalRequestDto>> DeletePppoeAccountAsync(int customerId, DeletePppoeRequest request, CancellationToken cancellationToken);
     Task<ApiResponse<PppoeChangedDto>> UpdatePppoeAccountAsync(int customerId, UpdatePppoeRequest request, CancellationToken cancellationToken);
     Task<ApiResponse<ApprovalRequestDto>> SubmitPppoeRequestAsync(int customerId, SubmitPppoeRequest request, CancellationToken cancellationToken);
     Task<ApiResponse<ApprovalRequestDto>> DecidePppoeRequestAsync(int customerId, long requestId, DecidePppoeRequest decision, CancellationToken cancellationToken);
@@ -95,10 +104,30 @@ public sealed record SavedDto(bool Saved);
 /// <summary>A streamed file from the API, or the error code when there is none.</summary>
 public sealed record ApiFile(HttpResponseMessage? Response, string? ErrorCode);
 
-public sealed class NetoraApiClient(HttpClient httpClient, ILogger<NetoraApiClient> logger) : INetoraApiClient
+public sealed class NetoraApiClient(HttpClient httpClient, ILogger<NetoraApiClient> logger, IHttpClientFactory clientFactory) : INetoraApiClient
 {
+    internal const string EmailTestClient = "NetoraEmailTest";
+
     public Task<ApiResponse<DashboardDto>> GetDashboardAsync(CancellationToken cancellationToken)
         => SendAsync<DashboardDto>(HttpMethod.Get, "api/v1/dashboard", null, cancellationToken);
+
+    public Task<ApiResponse<OperationsReportDto>> GetOperationsReportAsync(ReportType type, ReportRange range, CancellationToken ct)
+        => SendAsync<OperationsReportDto>(HttpMethod.Get, $"api/v1/reports?type={type}&range={range}", null, ct);
+
+    public Task<ApiResponse<IReadOnlyList<NotificationItemDto>>> GetNotificationsAsync(CancellationToken ct)
+        => SendAsync<IReadOnlyList<NotificationItemDto>>(HttpMethod.Get, "api/v1/notifications", null, ct);
+
+    public Task<ApiResponse<BackupHistoryDto>> GetBackupHistoryAsync(CancellationToken ct)
+        => SendAsync<BackupHistoryDto>(HttpMethod.Get, "api/v1/backups", null, ct);
+
+    public Task<ApiResponse<BackupSettingsDto>> GetBackupSettingsAsync(CancellationToken ct)
+        => SendAsync<BackupSettingsDto>(HttpMethod.Get, "api/v1/backups/settings", null, ct);
+
+    public Task<ApiResponse<object>> SaveBackupSettingsAsync(UpdateBackupSettingsRequest request, CancellationToken ct)
+        => SendAsync<object>(HttpMethod.Put, "api/v1/backups/settings", request, ct);
+
+    public Task<ApiResponse<object>> QueueBackupAsync(CancellationToken ct)
+        => SendAsync<object>(HttpMethod.Post, "api/v1/backups/run", null, ct);
 
     public Task<ApiResponse<OnuHistoryDto>> GetOnuHistoryAsync(int? customerId, string? search, int page, CancellationToken cancellationToken)
         => SendAsync<OnuHistoryDto>(HttpMethod.Get,
@@ -113,6 +142,12 @@ public sealed class NetoraApiClient(HttpClient httpClient, ILogger<NetoraApiClie
             $"api/v1/customers/{customerId}/diagnostics?includeLogs={(includeLogs ? "true" : "false")}", null, cancellationToken);
     public Task<ApiResponse<HealthStatusDto>> GetHealthAsync(CancellationToken cancellationToken)
         => SendAsync<HealthStatusDto>(HttpMethod.Get, "api/v1/health", null, cancellationToken);
+
+    public Task<ApiResponse<object>> DeleteCustomerAsync(int id, DeleteCustomerRequest request, CancellationToken cancellationToken)
+        => SendAsync<object>(HttpMethod.Delete, $"api/v1/customers/{id}", request, cancellationToken);
+
+    public Task<ApiResponse<ApprovalRequestDto>> DeletePppoeAccountAsync(int customerId, DeletePppoeRequest request, CancellationToken cancellationToken)
+        => SendAsync<ApprovalRequestDto>(HttpMethod.Delete, $"api/v1/pppoe/{customerId}", request, cancellationToken);
 
     public Task<ApiResponse<LoginResultDto>> LoginAsync(LoginRequest request, CancellationToken cancellationToken)
         => SendAsync<LoginResultDto>(HttpMethod.Post, "api/v1/auth/login", request, cancellationToken);
@@ -177,6 +212,9 @@ public sealed class NetoraApiClient(HttpClient httpClient, ILogger<NetoraApiClie
     public Task<ApiResponse<PppoeDetailDto>> GetPppoeAccountAsync(int customerId, CancellationToken cancellationToken)
         => SendAsync<PppoeDetailDto>(HttpMethod.Get, $"api/v1/pppoe/{customerId}", null, cancellationToken);
 
+    public Task<ApiResponse<PppoePasswordDto>> RevealPppoePasswordAsync(int customerId, CancellationToken cancellationToken)
+        => SendAsync<PppoePasswordDto>(HttpMethod.Post, $"api/v1/pppoe/{customerId}/password", null, cancellationToken);
+
     public Task<ApiResponse<PppoeChangedDto>> UpdatePppoeAccountAsync(int customerId, UpdatePppoeRequest request, CancellationToken cancellationToken)
         => SendAsync<PppoeChangedDto>(HttpMethod.Put, $"api/v1/pppoe/{customerId}", request, cancellationToken);
 
@@ -240,8 +278,11 @@ public sealed class NetoraApiClient(HttpClient httpClient, ILogger<NetoraApiClie
     public Task<ApiResponse<SavedDto>> UpdateEmailSettingsAsync(UpdateEmailSettingsRequest request, CancellationToken cancellationToken)
         => SendAsync<SavedDto>(HttpMethod.Put, "api/v1/settings/email", request, cancellationToken);
 
-    public Task<ApiResponse<TestEmailResultDto>> SendTestEmailAsync(CancellationToken cancellationToken)
-        => SendAsync<TestEmailResultDto>(HttpMethod.Post, "api/v1/settings/email/test", null, cancellationToken);
+    public async Task<ApiResponse<TestEmailResultDto>> SendTestEmailAsync(CancellationToken cancellationToken)
+    {
+        using var client = clientFactory.CreateClient(EmailTestClient);
+        return await SendAsync<TestEmailResultDto>(HttpMethod.Post, "api/v1/settings/email/test", null, cancellationToken, client);
+    }
 
     public Task<ApiResponse<RouterTestResultDto>> TestRouterAsync(CancellationToken cancellationToken)
         => SendAsync<RouterTestResultDto>(HttpMethod.Post, "api/v1/settings/router/test", null, cancellationToken);
@@ -319,14 +360,15 @@ public sealed class NetoraApiClient(HttpClient httpClient, ILogger<NetoraApiClie
         return SendAsync<CustomerListDto>(HttpMethod.Get, "api/v1/customers?" + string.Join("&", parts), null, cancellationToken);
     }
 
-    private async Task<ApiResponse<T>> SendAsync<T>(HttpMethod method, string path, object? body, CancellationToken cancellationToken)
+    private async Task<ApiResponse<T>> SendAsync<T>(HttpMethod method, string path, object? body, CancellationToken cancellationToken,
+        HttpClient? client = null)
     {
         try
         {
             using var request = new HttpRequestMessage(method, path);
             request.Content = body as HttpContent ?? (body is null ? null : JsonContent.Create(body));
 
-            using var response = await httpClient.SendAsync(request, cancellationToken);
+            using var response = await (client ?? httpClient).SendAsync(request, cancellationToken);
 
             // Some failures come from the server itself (for example 413 from Kestrel) and have no JSON envelope.
             if (response.Content.Headers.ContentType?.MediaType?.Contains("json", StringComparison.OrdinalIgnoreCase) != true)

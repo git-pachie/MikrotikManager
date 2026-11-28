@@ -33,8 +33,9 @@ internal sealed class MockRouterClient(
     public Task<IReadOnlyList<RouterPppoeLog>> ReadPppoeLogsAsync(string name, CancellationToken cancellationToken)
         => Task.FromResult<IReadOnlyList<RouterPppoeLog>>([]);
 
-    public Task<IReadOnlyList<RouterSecret>> ListSecretsAsync(CancellationToken cancellationToken)
-        => WithStateAsync<IReadOnlyList<RouterSecret>>(s => s.Secrets.Select(ToSecret).ToList(), save: false, cancellationToken);
+    public Task<IReadOnlyList<RouterSecret>> ListSecretsAsync(CancellationToken cancellationToken, bool includePasswords = true)
+        => WithStateAsync<IReadOnlyList<RouterSecret>>(s => s.Secrets.Select(ToSecret)
+            .Select(secret => includePasswords ? secret : secret with { Password = null }).ToList(), save: false, cancellationToken);
 
     public Task<RouterSecret?> FindSecretAsync(string? id, string name, CancellationToken cancellationToken)
         => WithStateAsync(s =>
@@ -74,6 +75,15 @@ internal sealed class MockRouterClient(
             var x = s.Secrets.FirstOrDefault(v => string.Equals(v.Name, name, StringComparison.Ordinal));
             return x is { Online: true, Disabled: false } ? new RouterActiveSession(x.Name, x.Address, "3d4h12m", "AA:BB:CC:00:00:" + x.Id.TrimStart('*').PadLeft(2, '0')[^2..]) : null;
         }, save: false, cancellationToken);
+
+    public Task DeleteSecretAsync(string id, CancellationToken cancellationToken)
+        => WithStateAsync(s =>
+        {
+            FailIfConfigured();
+            if (s.Secrets.RemoveAll(x => x.Id == id) == 0)
+                throw new RouterException(RouterErrorKind.NotFound, "The router has no such record.");
+            return true;
+        }, save: true, cancellationToken);
 
     /// <summary>
     /// The mock's PPP profiles: those saved when it was seeded, or for an older state file the profiles its secrets

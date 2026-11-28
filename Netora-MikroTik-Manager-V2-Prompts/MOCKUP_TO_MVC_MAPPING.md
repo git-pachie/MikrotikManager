@@ -14,7 +14,7 @@ All references are relative to `approved-mockups/`. Suggested controller/view na
 | NAP Boxes | `nap-boxes.html` | `NapBoxesController` | `NapBoxes/Index.cshtml` | `06-nap.md` |
 | NAP Details | `nap-details.html` | `NapBoxesController` | `NapBoxes/Details.cshtml` | `06-nap.md` |
 | Internet Plans | `plans.html` | `PlansController` | `Plans/Index.cshtml` | `05-plans.md` |
-| ONU History | `onu-history.html` | `OnuController` | `Onu/History.cshtml` | `07-onu.md` |
+| ONU History | `onu-history.html` | `OnuController` | `Onu/Index.cshtml` | `07-onu.md` |
 | Diagnostics | `diagnostics.html` | `DiagnosticsController` | `Diagnostics/Index.cshtml` | `10-diagnostics.md` |
 | Audit Trail | `audit.html` | `AuditController` | `Audit/Index.cshtml` | `12-audit-backup.md` |
 | User Management | `users.html` | `UsersController` | `Users/Index.cshtml` | `13-settings-users.md` |

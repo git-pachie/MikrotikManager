@@ -9,6 +9,7 @@ internal sealed class CustomerConfiguration : IEntityTypeConfiguration<Customer>
     public void Configure(EntityTypeBuilder<Customer> builder)
     {
         builder.ToTable("Customers");
+        builder.HasQueryFilter(c => c.DeletedAtUtc == null);
         builder.HasKey(c => c.Id);
         builder.Property(c => c.FirstName).HasMaxLength(100).IsRequired();
         builder.Property(c => c.LastName).HasMaxLength(100).IsRequired();
@@ -32,7 +33,7 @@ internal sealed class CustomerConfiguration : IEntityTypeConfiguration<Customer>
         builder.Property(c => c.ConcurrencyStamp).HasMaxLength(32).IsRequired().IsConcurrencyToken();
         builder.Property(c => c.Status).HasConversion<string>().HasMaxLength(20);
 
-        builder.HasIndex(c => c.PppoeUsername).IsUnique();
+        builder.HasIndex(c => c.PppoeUsername).IsUnique().HasFilter("[DeletedAtUtc] IS NULL");
         builder.HasIndex(c => new { c.IsManagerOnly, c.Status });
     }
 }

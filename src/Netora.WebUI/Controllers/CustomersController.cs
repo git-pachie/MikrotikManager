@@ -10,6 +10,39 @@ public class CustomersController(INetoraApiClient apiClient) : Controller
 {
     public const string ToastKey = "Toast";
 
+    [HttpGet("/customers/{id:int}/delete")]
+    public async Task<IActionResult> ConfirmDelete(int id, CancellationToken cancellationToken)
+    {
+        if (!IsManager) return DeleteDenied();
+        var result = await apiClient.GetCustomerAsync(id, cancellationToken);
+        if (result.Error?.Code == "not_found") return CustomerNotFound();
+        if (result.Data is { } customer) return View("Delete", customer);
+
+        TempData[ErrorKey] = result.Error?.Message ?? "The customer could not be loaded.";
+        return Redirect("/customers");
+    }
+
+    [HttpPost("/customers/{id:int}/delete")]
+    public async Task<IActionResult> Delete(int id, string? concurrencyStamp, CancellationToken cancellationToken)
+    {
+        if (!IsManager) return DeleteDenied();
+        var result = await apiClient.DeleteCustomerAsync(id, new DeleteCustomerRequest(concurrencyStamp ?? string.Empty), cancellationToken);
+        if (result.Success)
+        {
+            TempData[ToastKey] = "Customer deleted.";
+            return Redirect("/customers");
+        }
+        if (result.Error?.Code == "not_found") return CustomerNotFound();
+        TempData[ErrorKey] = result.Error?.Message ?? "The customer could not be deleted.";
+        return Redirect($"/customers/{id}/delete");
+    }
+
+    private ViewResult DeleteDenied()
+    {
+        Response.StatusCode = StatusCodes.Status403Forbidden;
+        return View("~/Views/Account/AccessDenied.cshtml");
+    }
+
     [HttpGet("/customers")]
     public async Task<IActionResult> Index(string? search, string? status, string? nap, string? plan,
         int page = 1, int pageSize = 10, string? sortBy = null, string? sortDir = null,

@@ -26,7 +26,9 @@ public sealed record CustomerListItemDto(
     string NapBox,
     string? OnuSerial,
     string Status,
-    DateTimeOffset CreatedAtUtc);
+    DateTimeOffset CreatedAtUtc,
+    bool CanDeletePppoe = false,
+    bool PppoeDeleted = false);
 
 /// <summary>Counts over every customer the caller may see (Manager-only rows are excluded for Staff).</summary>
 public sealed record CustomerStatsDto(int Total, int Active, int Disabled, int Terminated, int UnknownNap);
@@ -73,4 +75,9 @@ public sealed record CustomerDetailDto(
     bool ServiceFieldsLocked,
     IReadOnlyList<CustomerActivityDto> Activity,
     IReadOnlyList<Attachments.AttachmentDto> Attachments,
-    long MaxAttachmentBytes);
+    long MaxAttachmentBytes,
+    bool PppoeDeleted = false,
+    bool CanDeletePppoe = false,
+    string? PppoeLocalAddress = null,
+    string? PppoeRemoteAddress = null,
+    bool PppoePasswordSet = false);

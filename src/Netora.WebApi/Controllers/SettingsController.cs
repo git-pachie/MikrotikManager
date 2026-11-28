@@ -49,7 +49,7 @@ public sealed class SettingsController(ISettingsService settings, Netora.Applica
         {
             SettingsOutcome.Ok => Ok(ApiResponse<TestEmailResultDto>.Ok(result.Test!, t)),
             SettingsOutcome.NoRecipient => Conflict(ApiResponse<TestEmailResultDto>.Fail("no_recipient", "Your account has no email address. Add one in My Profile.", t)),
-            SettingsOutcome.NotConfigured => Conflict(ApiResponse<TestEmailResultDto>.Fail("not_configured", "Set the SMTP server and the sender address first.", t)),
+            SettingsOutcome.NotConfigured => Conflict(ApiResponse<TestEmailResultDto>.Fail("not_configured", "Save the SMTP server, sender address, and password if using an SMTP login.", t)),
             _ => Map(result),
         };
     }

@@ -19,7 +19,13 @@
             <p><a class="customer-link" href="/customers/@d.CustomerId">@d.CustomerName</a> <span class="detail-dot">•</span> @d.DisplayId</p>
         </div>
     </div>
-    <div class="heading-actions"><a class="btn btn-outline" href="/pppoe">Back to PPPoE</a></div>
+    <div class="heading-actions">
+        @if (d.CanDelete)
+        {
+            <a class="btn btn-outline" href="/pppoe/@d.CustomerId/delete">Delete Account</a>
+        }
+        <a class="btn btn-outline" href="/pppoe">Back to PPPoE</a>
+    </div>
 </div>
 @if (TempData[Netora.WebUI.Controllers.CustomersController.ToastKey] is string toast)
 {
@@ -43,23 +49,32 @@
         </div>
     </div>
 
-    @if (pending is not null)
+    @if (d.DeletionRequestId is { } deletionId)
+    {
+        <div class="detail-alert" role="status">Deletion requested. <a href="/approvals/@deletionId">View router result</a>.</div>
+    }
+    else if (pending is not null)
     {
         <div class="detail-alert" role="status">
             <strong>@ApprovalLabels.Operation(pending.Operation) requested</strong> by @pending.RequestedBy on @PppoeLabels.When(pending.RequestedAtUtc)
             (<a href="/approvals/@pending.Id">@Netora.Domain.Approvals.ApprovalRequest.DisplayId(pending.Id)</a>).
             @if (!string.IsNullOrEmpty(pending.Reason)) { <span>Reason: @pending.Reason</span> }
             @if (!Model.IsManager) { <span>Waiting for a Manager's approval.</span> }
-            @if (pending.Operation == "CreatePppoe" && !d.PasswordSet) { <span>Set a PPPoE password below before it can be approved.</span> }
         </div>
         @if (Model.IsManager)
         {
-            <form method="post" asp-controller="Pppoe" asp-action="Decide" asp-route-id="@d.CustomerId" asp-route-requestId="@pending.Id" class="state-form">
-                <label class="state-note">Decision note (optional)<input name="note" maxlength="500" placeholder="Visible in the request history"></label>
-                <button type="submit" name="approve" value="true" class="btn btn-primary"
-                        disabled="@(pending.Operation == "CreatePppoe" && !d.PasswordSet)">Approve @PppoeLabels.Operation(pending.Operation)</button>
-                <button type="submit" name="approve" value="false" class="btn btn-outline">Reject</button>
-            </form>
+            @if (pending.Operation == "CreatePppoe")
+            {
+                <div class="module-actions"><a class="btn btn-primary" href="/approvals/@pending.Id">Review PPPoE Creation</a></div>
+            }
+            else
+            {
+                <form method="post" asp-controller="Pppoe" asp-action="Decide" asp-route-id="@d.CustomerId" asp-route-requestId="@pending.Id" class="state-form">
+                    <label class="state-note">Decision note (optional)<input name="note" maxlength="500" placeholder="Visible in the request history"></label>
+                    <button type="submit" name="approve" value="true" class="btn btn-primary">Approve @PppoeLabels.Operation(pending.Operation)</button>
+                    <button type="submit" name="approve" value="false" class="btn btn-outline">Reject</button>
+                </form>
+            }
         }
     }
     else
@@ -79,7 +94,7 @@
                 }
                 @managerNote
             </p>
-            <form method="post" asp-controller="Pppoe" asp-action="Submit" asp-route-id="@d.CustomerId" class="state-form"
+            <form id="account-state-change" method="post" asp-controller="Pppoe" asp-action="Submit" asp-route-id="@d.CustomerId" class="state-form"
                   data-confirm="@(Model.IsManager ? $"{op} this account now?" : $"Send a request to {op.ToLowerInvariant()} this account?")">
                 <input type="hidden" name="operation" value="@op">
                 <label class="state-note">Reason (optional)<input name="reason" maxlength="500" placeholder="Why is this change needed?"></label>
@@ -137,6 +152,29 @@
     }
 </section>
 
+<section class="panel module-panel">
+    <div class="module-head"><h2>Saved PPPoE Password</h2></div>
+    <partial name="_PppoePassword" model="@(new PppoePasswordViewModel(d.CustomerId, d.PasswordSet))" />
+    @if (d.CanEdit)
+    {
+        <div class="module-actions"><a class="btn btn-outline" href="#NewPassword">Change Password</a></div>
+        @if (d.AccountState == "Disabled")
+        {
+            <p class="module-note">Save the new password below, then enable the account to send it to MikroTik.</p>
+        }
+    }
+    else if (d.AccountState == "Enabled")
+    {
+        <p class="module-note">Disable the account to unlock password editing.</p>
+        @if (d.CanRequestDisable)
+        {
+            <div class="module-actions">
+                <a class="btn btn-outline" href="#account-state-change">@(Model.IsManager ? "Go to Disable Account" : "Go to Request Disable")</a>
+            </div>
+        }
+    }
+</section>
+
 <form asp-controller="Pppoe" asp-action="Edit" asp-route-id="@d.CustomerId" method="post" id="pppoeForm" novalidate>
     <input asp-for="ConcurrencyStamp" type="hidden">
     <section class="panel module-panel">
@@ -177,7 +215,7 @@
                 </div>
             }
         </fieldset>
-        <p class="module-note">The password is stored encrypted and is never shown again after saving. Saved changes are sent to MikroTik after approval, once the router connection is set up.</p>
+        <p class="module-note">Netora stores the password encrypted. Saved changes are sent to MikroTik after approval.</p>
     </section>
 </form>
 
@@ -211,3 +249,7 @@
         </div>
     }
 </section>
+
+@section Scripts {
+    <script src="~/js/pppoe-password.js" asp-append-version="true"></script>
+}

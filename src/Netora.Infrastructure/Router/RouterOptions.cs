@@ -1,14 +1,15 @@
+using System.Security.Cryptography;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
+using Netora.Application.Router;
 using Netora.Domain.Settings;
 using Netora.Infrastructure.Persistence;
 
 namespace Netora.Infrastructure.Router;
 
 /// <summary>
-/// Router:Mode chooses the router implementation. "Mock" (development without a router) or "RouterOS" (the real
-/// RouterOS 7 REST API over HTTPS). There is deliberately no silent default in Production: the API refuses to start
-/// until the mode is set, so mock results can never be mistaken for a real router.
+/// Router:Mode supplies the default implementation until a Manager saves a mode in Settings.
+/// The API requires an explicit startup default in every environment.
 /// </summary>
 public sealed class RouterOptions
 {
@@ -48,6 +49,7 @@ public interface IRouterConnectionProvider
 internal sealed class RouterConnectionProvider(NetoraDbContext db, IDataProtectionProvider protection) : IRouterConnectionProvider
 {
     public const string PasswordPurpose = "Netora.Router.Password.v1";
+    internal const string UnreadablePasswordMessage = "The saved MikroTik password cannot be read on this server. Re-enter the API password in Settings and save it.";
 
     public async Task<RouterConnection?> GetAsync(CancellationToken cancellationToken)
     {
@@ -60,7 +62,15 @@ internal sealed class RouterConnectionProvider(NetoraDbContext db, IDataProtecti
         var protectedPassword = V(AppSettingKeys.RouterPassword);
         if (address is null || user is null || protectedPassword is null) return null;
 
-        var password = protection.CreateProtector(PasswordPurpose).Unprotect(protectedPassword);
+        string password;
+        try
+        {
+            password = protection.CreateProtector(PasswordPurpose).Unprotect(protectedPassword);
+        }
+        catch (CryptographicException)
+        {
+            throw new RouterException(RouterErrorKind.NotConfigured, UnreadablePasswordMessage);
+        }
         var port = int.TryParse(V(AppSettingKeys.RouterPort), out var p) ? p : 443;
         return new RouterConnection(address, port, user, password, V(AppSettingKeys.RouterCertificateThumbprint), V(AppSettingKeys.RouterName));
     }

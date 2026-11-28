@@ -20,6 +20,9 @@ Import existing MikroTik PPPoE accounts without duplicates. Preserve account ide
 
 Record approved provisioning failures with error details and retry state. Retry idempotently without repeating successful MikroTik changes.
 
+### 04.06 Manager-only deletion
+
+An explicit Delete action removes the verified PPPoE secret from the router and clears the stored credentials after completing deletion. Netora retains the customer as Terminated and keeps its history. Any pending approval for the account closes when deletion completes. The Audit Trail and file log record completion, and the configured email service notifies all active Managers with email addresses.
 
 ## V2 mockup-aligned implementation instructions
 

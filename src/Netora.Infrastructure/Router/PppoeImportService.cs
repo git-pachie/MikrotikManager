@@ -72,7 +72,8 @@ internal sealed class PppoeImportService(
                 PlanId = known.PlanIdsByProfile[s.Profile!.Trim()],
                 NapBoxId = known.UnknownNapId,
                 Status = s.Disabled ? CustomerStatus.Disabled : CustomerStatus.Active,
-                PppoePasswordProtected = string.IsNullOrEmpty(s.Password) ? null : passwords.Protect(s.Password),
+                PppoePasswordProtected = string.IsNullOrEmpty(s.Password) || PppoePasswordMask.IsMasked(s.Password)
+                    ? null : passwords.Protect(s.Password),
                 PppoeRemoteAddress = s.RemoteAddress,
                 PppoeLocalAddress = s.LocalAddress,
                 PppoeComment = Truncate(RouterRules.StripMarker(s.Comment), 200),
@@ -137,7 +138,8 @@ internal sealed class PppoeImportService(
 
     private async Task<Known> KnownAsync(CancellationToken ct)
     {
-        var rows = await db.Customers.AsNoTracking().Select(c => new { c.Id, c.PppoeUsername, c.RouterSecretId }).ToListAsync(ct);
+        var rows = await db.Customers.AsNoTracking()
+            .Select(c => new { c.Id, c.PppoeUsername, c.RouterSecretId }).ToListAsync(ct);
         var byName = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         foreach (var r in rows) byName.TryAdd(r.PppoeUsername, r.Id);
 
@@ -156,8 +158,9 @@ internal sealed class PppoeImportService(
     private static ImportCandidateDto Classify(RouterSecret s, Known known)
     {
         var comment = RouterRules.StripMarker(s.Comment);
-        if (known.ByName.TryGetValue(s.Name, out var id) || known.Names.Contains(s.Name))
-            return new(s.Name, s.Profile, s.Disabled, comment, "Already imported", "a customer already has this PPPoE username", known.ByName.GetValueOrDefault(s.Name));
+        if (known.Names.Contains(s.Name))
+            return new(s.Name, s.Profile, s.Disabled, comment, "Already imported", "a customer already has this PPPoE username",
+                known.ByName.TryGetValue(s.Name, out var id) ? id : null);
         if (known.SecretIds.Contains(s.Id))
             return new(s.Name, s.Profile, s.Disabled, comment, "Already imported", "linked to a customer under another name", null);
         if (!string.IsNullOrEmpty(s.Service) && s.Service is not ("pppoe" or "any"))

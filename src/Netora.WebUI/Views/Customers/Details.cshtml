@@ -5,7 +5,8 @@
     ViewData["Nav"] = "customers";
     var d = Model.Data;
     var rs = Model.Router;
-    var secretText = rs is null ? "Not checked" : !rs.Reachable ? "Router not reachable" : rs.SecretFound ? rs.SecretState! : rs.SecretExpected ? "Missing on router" : "Not created yet";
+    var secretText = d?.PppoeDeleted == true && rs?.SecretFound != true ? "Deleted"
+        : rs is null ? "Not checked" : !rs.Reachable ? "Router not reachable" : rs.SecretFound ? rs.SecretState! : rs.SecretExpected ? "Missing on router" : "Not created yet";
     var liveText = rs is null ? "Not checked" : !rs.Reachable ? "Unknown" : rs.SessionActive ? "Online" : "Offline";
 }
 <div class="detail-breadcrumb"><a href="/customers">Customers</a><span> / </span><strong>Customer Details</strong></div>
@@ -35,6 +36,14 @@
             else
             {
                 <button type="button" class="btn btn-primary" disabled title="Plan change requests are for Active accounts">Request Plan Change</button>
+            }
+            @if (d.CanDeletePppoe)
+            {
+                <a class="btn btn-outline" href="/pppoe/@d.Id/delete?from=customer">Delete PPPoE Account</a>
+            }
+            @if (User.IsInRole("Manager"))
+            {
+                <a class="btn btn-outline" href="/customers/@d.Id/delete">Delete Customer</a>
             }
         </div>
     }
@@ -139,8 +148,13 @@
     <div class="detail-tab-pane" id="pane-pppoe" data-pane="pppoe" role="tabpanel" aria-labelledby="tab-pppoe" hidden>
         <div class="section-head">
             <h3>PPPoE Connection &amp; Diagnostics</h3>
-            <div class="heading-actions"><a class="btn btn-outline" href="/pppoe/@d.Id"><svg class="icon"><use href="#wifi" /></svg>PPPoE Account</a>
-            <a class="btn btn-outline" href="/customers/@d.Id" title="Checks the router again"><svg class="icon"><use href="#refresh" /></svg>Refresh Status</a></div>
+            <div class="heading-actions">
+                @if (!d.PppoeDeleted)
+                {
+                    <a class="btn btn-outline" href="/pppoe/@d.Id"><svg class="icon"><use href="#wifi" /></svg>PPPoE Account</a>
+                }
+                <a class="btn btn-outline" href="/customers/@d.Id" data-refresh-pppoe title="Checks the router again"><svg class="icon"><use href="#refresh" /></svg>Refresh Status</a>
+            </div>
         </div>
         @if (rs is null)
         {
@@ -158,7 +172,13 @@
             <div><span>PPPoE Username</span><strong>@d.PppoeUsername</strong></div>
             <div><span>Secret Status</span><strong>@secretText</strong></div>
             <div><span>Session Status</span><strong>@(rs is { Reachable: true, SecretFound: true } ? (rs.SessionActive ? $"Online{(rs.Uptime is null ? "" : $", up {rs.Uptime}")}" : "Offline") : "Unavailable")</strong></div>
-            <div><span>Assigned IP</span><strong>@(rs?.AssignedIp ?? "—")</strong></div>
+            <div><span>Assigned IP (active session)</span><strong>@(rs?.AssignedIp ?? "—")</strong></div>
+            <div><span>Local IP</span><strong>@Model.LocalIp</strong></div>
+            <div><span>Remote IP</span><strong>@Model.RemoteIp</strong></div>
+            <div>
+                <span>PPPoE Password</span>
+                <partial name="_PppoePassword" model="@(new PppoePasswordViewModel(d.Id, d.PppoePasswordSet))" />
+            </div>
             <div><span>Profile (expected)</span><strong>@d.PlanName</strong></div>
             <div><span>Profile (router)</span><strong>@(rs?.ActualProfile ?? "—")</strong></div>
             <div><span>Configuration Mismatch</span><strong>@(rs is not { Reachable: true } ? "Not checked" : rs.Mismatches.Count == 0 ? "None" : $"{rs.Mismatches.Count} difference(s)")</strong></div>
@@ -311,4 +331,5 @@
 @section Scripts {
     <script src="~/js/details.js" asp-append-version="true"></script>
     <script src="~/js/attachments.js" asp-append-version="true"></script>
+    <script src="~/js/pppoe-password.js" asp-append-version="true"></script>
 }

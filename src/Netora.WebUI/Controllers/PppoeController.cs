@@ -8,6 +8,69 @@ namespace Netora.WebUI.Controllers;
 
 public class PppoeController(INetoraApiClient apiClient) : Controller
 {
+    [HttpPost("/pppoe/{id:int}/password")]
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+    public async Task<IActionResult> RevealPassword(int id, CancellationToken cancellationToken)
+    {
+        if (!User.IsInRole("Manager")) return Forbid();
+        var result = await apiClient.RevealPppoePasswordAsync(id, cancellationToken);
+        return result.Data is { } password
+            ? Json(password)
+            : BadRequest(new { message = result.Error?.Message ?? "The saved password could not be loaded." });
+    }
+
+    [HttpGet("/pppoe/{id:int}/delete")]
+    public async Task<IActionResult> ConfirmDelete(int id, string? from, CancellationToken cancellationToken)
+    {
+        if (!User.IsInRole("Manager")) return DeleteDenied();
+        var result = await apiClient.GetPppoeAccountAsync(id, cancellationToken);
+        if (result.Data is not { } account) return LoadFailed(result.Error);
+        if (account.DeletionRequestId is { } existing) return Redirect($"/approvals/{existing}");
+        if (account.CanDelete)
+        {
+            ViewData["DeleteSource"] = from;
+            ViewData["DeleteReturnPath"] = DeleteReturnPath(id, from);
+            return View("Delete", account);
+        }
+
+        TempData[CustomersController.ErrorKey] = "This PPPoE account cannot be deleted. Reload and check its current state.";
+        return Redirect($"/pppoe/{id}");
+    }
+
+    [HttpPost("/pppoe/{id:int}/delete")]
+    public async Task<IActionResult> Delete(int id, string? concurrencyStamp, string? from, CancellationToken cancellationToken)
+    {
+        if (!User.IsInRole("Manager")) return DeleteDenied();
+        var result = await apiClient.DeletePppoeAccountAsync(id, new DeletePppoeRequest(concurrencyStamp ?? string.Empty), cancellationToken);
+        if (result.Success && result.Data is { } deletion)
+        {
+            if (deletion.ProvisioningStatus == "Succeeded")
+            {
+                TempData[CustomersController.ToastKey] = "PPPoE account deleted.";
+                return Redirect(DeleteReturnPath(id, from, completed: true));
+            }
+
+            TempData[CustomersController.ErrorKey] = "Deletion was authorized. Review the router result and retry from this request if needed.";
+            return Redirect($"/approvals/{deletion.Id}");
+        }
+        if (result.Error?.Code == "not_found") return NotFoundPage();
+        TempData[CustomersController.ErrorKey] = Message(result.Error);
+        return Redirect(DeleteReturnPath(id, from));
+    }
+
+    private static string DeleteReturnPath(int id, string? from, bool completed = false) => from switch
+    {
+        "customers" => "/customers",
+        "customer" => $"/customers/{id}",
+        _ => completed ? "/pppoe" : $"/pppoe/{id}",
+    };
+
+    private ViewResult DeleteDenied()
+    {
+        Response.StatusCode = StatusCodes.Status403Forbidden;
+        return View("~/Views/Account/AccessDenied.cshtml");
+    }
+
     [HttpGet("/pppoe")]
     public async Task<IActionResult> Index(string? search, string? state, int page = 1, int pageSize = 10,
         string? sortBy = null, string? sortDir = null, CancellationToken cancellationToken = default)
@@ -33,13 +96,14 @@ public class PppoeController(INetoraApiClient apiClient) : Controller
     }
 
     [HttpGet("/pppoe/import")]
-    public IActionResult Import() => View(new PppoeImportViewModel { IsManager = User.IsInRole("Manager") });
+    public async Task<IActionResult> Import(CancellationToken cancellationToken)
+        => View(await LoadImportAsync(cancellationToken));
 
     /// <summary>On-demand scan (04.04): reads the router's secrets and shows them for review. Imports nothing.</summary>
     [HttpPost("/pppoe/import/scan")]
     public async Task<IActionResult> Scan(CancellationToken cancellationToken)
     {
-        var model = new PppoeImportViewModel { IsManager = User.IsInRole("Manager") };
+        var model = await LoadImportAsync(cancellationToken);
         if (!model.IsManager) return View("Import", model with { Error = "Only Managers can scan the router and import accounts." });
         var result = await apiClient.ScanImportAsync(cancellationToken);
         return View("Import", result.Success
@@ -47,17 +111,27 @@ public class PppoeController(INetoraApiClient apiClient) : Controller
             : model with { Error = "The router could not be scanned. " + (result.Error?.Message ?? "Unexpected error.") });
     }
 
+    private async Task<PppoeImportViewModel> LoadImportAsync(CancellationToken cancellationToken)
+    {
+        if (!User.IsInRole("Manager")) return new PppoeImportViewModel();
+        var settings = await apiClient.GetSettingsAsync(cancellationToken);
+        return new PppoeImportViewModel { IsManager = true, Router = settings.Data?.Router };
+    }
+
     /// <summary>Imports only the secrets the Manager ticked after a scan.</summary>
     [HttpPost("/pppoe/import")]
-    public async Task<IActionResult> ConfirmImport(List<string>? names, CancellationToken cancellationToken)
+    public async Task<IActionResult> ConfirmImport(List<string>? names, string? previewMode, CancellationToken cancellationToken)
     {
         if (!User.IsInRole("Manager")) return View("Import", new PppoeImportViewModel { Error = "Only Managers can import accounts." });
-        var result = await apiClient.ImportPppoeAsync(new Netora.Application.Router.ImportRequest(names ?? []), cancellationToken);
+        var result = await apiClient.ImportPppoeAsync(new Netora.Application.Router.ImportRequest(names ?? [], previewMode), cancellationToken);
         if (result.Success && result.Data is { } r)
         {
             TempData[CustomersController.ToastKey] = $"{r.Imported} account(s) imported with NAP UNKNOWN, {r.Skipped} skipped." +
                 (r.Messages.Count > 0 ? " " + string.Join(" ", r.Messages.Take(10)) : string.Empty);
-            return Redirect(r.Imported > 0 ? "/customers?nap=UNKNOWN" : "/pppoe/import");
+            if (r.Imported == 0) return Redirect("/pppoe/import");
+            return Redirect(names is [var username]
+                ? Microsoft.AspNetCore.WebUtilities.QueryHelpers.AddQueryString("/customers?nap=UNKNOWN", "search", username)
+                : "/customers?nap=UNKNOWN");
         }
         TempData[CustomersController.ErrorKey] = "Nothing was imported. " + (result.Error?.Message ?? "Unexpected error.");
         return Redirect("/pppoe/import");
@@ -101,7 +175,8 @@ public class PppoeController(INetoraApiClient apiClient) : Controller
         }
         model.Detail = current.Data;
         model.NewPassword = null;
-        ModelState.Remove(nameof(PppoeFormViewModel.NewPassword));
+        if (ModelState.ContainsKey(nameof(PppoeFormViewModel.NewPassword)))
+            ModelState.SetModelValue(nameof(PppoeFormViewModel.NewPassword), rawValue: null, attemptedValue: null);
         await FillAsync(model, cancellationToken);
         return View(model);
     }
@@ -117,6 +192,12 @@ public class PppoeController(INetoraApiClient apiClient) : Controller
             TempData[CustomersController.ToastKey] = r.Status == "Approved"
                 ? r.Operation switch
                 {
+                    "DisablePppoe" or "EnablePppoe" => r.ProvisioningStatus switch
+                    {
+                        "Succeeded" => $"{PppoeLabels.Operation(r.Operation)} completed on the router ({requestId}).",
+                        "Failed" => $"{requestId} approved. The router update failed. Open Request History to retry.",
+                        _ => $"{requestId} approved. Open Request History to check the router status.",
+                    },
                     "ChangePlan" => $"Plan changed ({requestId}, approved by you). Not sent to the router yet.",
                     "TerminatePppoe" => $"Account terminated ({requestId}, approved by you). Not sent to the router yet.",
                     _ => $"Account {PppoeLabels.Operation(r.Operation).ToLowerInvariant()}d ({requestId}, approved by you). Not sent to the router yet.",

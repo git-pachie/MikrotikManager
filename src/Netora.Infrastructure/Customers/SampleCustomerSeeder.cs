@@ -41,7 +41,7 @@ public static class SampleCustomerSeeder
     {
         using var scope = services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<NetoraDbContext>();
-        if (await db.Customers.AnyAsync(cancellationToken)) return;
+        if (await db.Customers.IgnoreQueryFilters().AnyAsync(cancellationToken)) return;
 
         // The plans and NAP boxes the samples use, unless they already exist (UNKNOWN comes from the migration).
         // Plans map to a PPP profile of the same name, as before module 05.

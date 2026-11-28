@@ -109,8 +109,8 @@ internal sealed class AuditQueries(NetoraDbContext db) : IAuditQueries
         var routerActions = AuditLabels.RouterActions.ToList();
 
         var q = from a in db.CustomerActivities.AsNoTracking()
-                join c in db.Customers.AsNoTracking() on a.CustomerId equals c.Id
-                select new { a, c.FirstName, c.LastName, c.PppoeUsername };
+                join c in db.Customers.IgnoreQueryFilters().AsNoTracking() on a.CustomerId equals c.Id
+                select new { a, c.FirstName, c.LastName, c.PppoeUsername, c.DeletedAtUtc };
 
         q = category switch
         {
@@ -118,7 +118,8 @@ internal sealed class AuditQueries(NetoraDbContext db) : IAuditQueries
             AuditCategories.Pppoe => q.Where(x => pppoeActions.Contains(x.a.Action)),
             AuditCategories.Router => q.Where(x => routerActions.Contains(x.a.Action)),
             AuditCategories.Approvals => q.Where(x => x.a.Action.StartsWith("Pppoe")
-                && (x.a.Action.EndsWith("Requested") || x.a.Action.EndsWith("Approved") || x.a.Action.EndsWith("Rejected"))),
+                && (x.a.Action.EndsWith("Requested") || x.a.Action.EndsWith("Approved") || x.a.Action.EndsWith("Rejected")
+                    || x.a.Action == "PppoePendingRequestClosed")),
             _ => q,
         };
         if (from is not null) q = q.Where(x => x.a.OccurredAtUtc >= from);
@@ -132,12 +133,14 @@ internal sealed class AuditQueries(NetoraDbContext db) : IAuditQueries
         var rows = await q.OrderByDescending(x => x.a.OccurredAtUtc).ThenByDescending(x => x.a.Id).Take(take).ToListAsync(ct);
         return (count, rows.Select(x => new AuditEntryDto(
             x.a.OccurredAtUtc, x.a.ActorUserName, ActivityCategory(x.a.Action),
-            string.IsNullOrWhiteSpace(x.LastName) ? x.FirstName : $"{x.FirstName} {x.LastName}", $"/customers/{x.a.CustomerId}",
+            string.IsNullOrWhiteSpace(x.LastName) ? x.FirstName : $"{x.FirstName} {x.LastName}",
+            x.DeletedAtUtc is null ? $"/customers/{x.a.CustomerId}" : null,
             AuditLabels.Action(x.a.Action), x.a.Outcome, x.a.Detail)).ToList());
     }
 
     internal static string ActivityCategory(string action)
     {
+        if (action == "PppoePendingRequestClosed") return AuditCategories.Approvals;
         if (AuditLabels.PppoeActions.Contains(action)) return AuditCategories.Pppoe;
         if (AuditLabels.RouterActions.Contains(action)) return AuditCategories.Router;
         if (AuditLabels.ApprovalStep(action) is not null) return AuditCategories.Approvals;

@@ -1,11 +1,11 @@
 <header class="topbar">
-    <button class="hamburger" id="sidebarToggle" aria-label="Toggle sidebar"><svg class="icon"><use href="#menu" /></svg></button>
+    <button type="button" class="hamburger" id="sidebarToggle" aria-label="Toggle sidebar" aria-controls="sidebar"><svg class="icon"><use href="#menu" /></svg></button>
     <div class="top-right">
         <div class="theme-toggle" role="group" aria-label="Theme">
             <button type="button" data-theme="light" class="selected" aria-label="Light mode"><svg class="icon"><use href="#sun" /></svg></button>
             <button type="button" data-theme="dark" aria-label="Dark mode"><svg class="icon"><use href="#moon" /></svg></button>
         </div>
-        <button class="notification" aria-label="Notifications"><svg class="icon" style="width:26px;height:26px"><use href="#bell" /></svg></button>
+        <a class="notification notification-link" href="/notifications" aria-label="Notifications"><svg class="icon" style="width:26px;height:26px"><use href="#bell" /></svg></a>
         <a class="profile" href="/profile" title="My Profile">
             <div class="avatar" aria-hidden="true">👤</div>
             <div>

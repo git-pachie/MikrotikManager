@@ -21,6 +21,9 @@ public sealed record ApprovalNotice(
         r.RequestedByUserId, r.RequestedByUserName, r.DecidedByUserName, r.DecisionNote);
 }
 
+public sealed record ApprovedPppoeDetails(string Name, string? Address, string? Mobile,
+    string Username, string ProtectedPassword, string? RemoteAddress);
+
 /// <summary>
 /// Approval emails (08.03): Managers on a new request, the requester on a decision.
 /// Implementations queue the message and return at once. They must never throw, and a failed email
@@ -31,4 +34,8 @@ public interface IApprovalNotifier
     void RequestSubmitted(ApprovalNotice notice);
 
     void RequestDecided(ApprovalNotice notice);
+
+    void PppoeDeleted(ApprovalNotice notice, string routerMode, string actor);
+
+    void PppoeCreationApproved(ApprovalNotice notice, ApprovedPppoeDetails details);
 }

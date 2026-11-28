@@ -17,6 +17,9 @@ public enum ApprovalOperation
 
     /// <summary>Terminate an Active or Disabled account. Nothing is deleted (03.04).</summary>
     TerminatePppoe = 5,
+
+    /// <summary>Manager-only removal of the PPPoE secret. Customer history is retained.</summary>
+    DeletePppoe = 6,
 }
 
 public enum ApprovalStatus
