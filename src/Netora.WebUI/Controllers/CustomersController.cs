@@ -92,6 +92,18 @@ public class CustomersController(INetoraApiClient apiClient) : Controller
         });
     }
 
+    [HttpGet("/customers/{id:int}/pppoe-traffic")]
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+    public async Task<IActionResult> PppoeTraffic(int id, CancellationToken cancellationToken)
+    {
+        var result = await apiClient.GetPppoeTrafficAsync(id, cancellationToken);
+        if (result.Error?.Code == "not_found") return NotFound();
+        if (result.Error?.Code == "unauthorized") return Unauthorized();
+        return result.Success && result.Data is not null
+            ? Json(result.Data)
+            : StatusCode(StatusCodes.Status503ServiceUnavailable);
+    }
+
     [HttpGet("/customers/new")]
     public async Task<IActionResult> Create(CancellationToken cancellationToken)
     {

@@ -199,6 +199,24 @@
             </div>
             <p class="module-note">Nothing is changed automatically on either side. Correct the record in Netora, or the router, or send the account again through an approved request.</p>
         }
+        <section class="pppoe-traffic" aria-labelledby="traffic-title" data-traffic-url="@Url.Action("PppoeTraffic", "Customers", new { id = d.Id })">
+            <div class="pppoe-traffic-heading">
+                <h3 id="traffic-title">Live PPPoE Traffic</h3>
+                <p>Last 5 minutes</p>
+            </div>
+            <dl class="pppoe-traffic-rates">
+                <div class="traffic-download">
+                    <dt><svg class="icon" aria-hidden="true"><use href="#download" /></svg>Download</dt>
+                    <dd data-download>—</dd>
+                </div>
+                <div class="traffic-upload">
+                    <dt><svg class="icon" aria-hidden="true"><use href="#upload" /></svg>Upload</dt>
+                    <dd data-upload>—</dd>
+                </div>
+            </dl>
+            <canvas role="img" aria-label="Line chart of download and upload traffic over the last 5 minutes, in Mbps" aria-describedby="traffic-status"></canvas>
+            <p id="traffic-status" role="status">Waiting for traffic data.</p>
+        </section>
         <h3 class="detail-subtitle">Recent PPPoE Logs</h3>
         <a class="btn btn-outline" href="/diagnostics?customerId=@d.Id">Open Diagnostics</a>
     </div>
@@ -330,6 +348,7 @@
 }
 @section Scripts {
     <script src="~/js/details.js" asp-append-version="true"></script>
+    <script src="~/js/pppoe-traffic.js" asp-append-version="true"></script>
     <script src="~/js/attachments.js" asp-append-version="true"></script>
     <script src="~/js/pppoe-password.js" asp-append-version="true"></script>
 }

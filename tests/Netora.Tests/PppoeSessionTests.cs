@@ -4,14 +4,45 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Netora.Application.Approvals;
 using Netora.Application.Auth;
 using Netora.Application.Pppoe;
+using Netora.Application.Router;
 using Netora.Domain.Customers;
 using Netora.Infrastructure.Approvals;
 using Netora.Infrastructure.Pppoe;
+using Netora.Infrastructure.Router;
 
 namespace Netora.Tests;
 
 public sealed class PppoeSessionTests
 {
+    [Fact]
+    public async Task Traffic_sampling_checks_visibility_and_distinguishes_offline_from_router_errors()
+    {
+        using var fixture = new TestDb();
+        var ids = fixture.Seed();
+        await using var db = fixture.NewContext();
+        var router = new FakeRouter();
+        var service = new RouterStatusService(db, router);
+
+        Assert.Equal("mock", (await service.SampleTrafficAsync(ids.Normal, false, default))!.State);
+        router.Mode = "RouterOS";
+        Assert.Null(await service.SampleTrafficAsync(ids.ManagerOnly, false, default));
+        Assert.Equal("no_account", (await service.SampleTrafficAsync(ids.Pending, false, default))!.State);
+        Assert.Empty(router.TrafficReads);
+
+        Assert.Equal("offline", (await service.SampleTrafficAsync(ids.Normal, false, default))!.State);
+        var expected = new PppoeTrafficCounters("connection", 125, 50);
+        router.Traffic.Add("maria_santos", expected);
+        var sample = (await service.SampleTrafficAsync(ids.Normal, false, default))!;
+        Assert.Equal("online", sample.State);
+        Assert.Equal(expected, sample.Counters);
+        Assert.Equal(["maria_santos", "maria_santos"], router.TrafficReads);
+
+        router.Down = true;
+        sample = (await service.SampleTrafficAsync(ids.Normal, true, default))!;
+        Assert.Equal("unavailable", sample.State);
+        Assert.Null(sample.Counters);
+    }
+
     [Fact]
     public async Task Session_status_uses_one_router_lookup_and_preserves_staff_visibility()
     {

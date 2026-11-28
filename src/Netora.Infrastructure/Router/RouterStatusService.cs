@@ -12,6 +12,34 @@ namespace Netora.Infrastructure.Router;
 /// </summary>
 internal sealed class RouterStatusService(NetoraDbContext db, IRouterClient router, IActivityLog? activity = null) : IRouterStatusService
 {
+    public async Task<PppoeTrafficSampleDto?> SampleTrafficAsync(int customerId, bool viewerIsManager, CancellationToken cancellationToken)
+    {
+        var customer = await db.Customers.AsNoTracking()
+            .Where(c => c.Id == customerId && (viewerIsManager || !c.IsManagerOnly))
+            .Select(c => new { c.PppoeUsername, c.Status, c.PppoeDeletedAtUtc })
+            .FirstOrDefaultAsync(cancellationToken);
+        if (customer is null) return null;
+        if (customer.PppoeDeletedAtUtc is not null || customer.Status == CustomerStatus.PendingApproval)
+            return new("no_account", DateTimeOffset.UtcNow);
+        if (router.Mode == "Mock") return new("mock", DateTimeOffset.UtcNow);
+
+        using var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        budget.CancelAfter(TimeSpan.FromSeconds(5));
+        try
+        {
+            var counters = await router.ReadPppoeTrafficAsync(customer.PppoeUsername, budget.Token);
+            return new(counters is null ? "offline" : "online", DateTimeOffset.UtcNow, counters);
+        }
+        catch (RouterException)
+        {
+            return new("unavailable", DateTimeOffset.UtcNow);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return new("unavailable", DateTimeOffset.UtcNow);
+        }
+    }
+
     public async Task<RouterStatusDto?> CheckAsync(int customerId, bool viewerIsManager, CancellationToken cancellationToken)
     {
         var customer = await FindVisibleAsync(customerId, viewerIsManager, cancellationToken);

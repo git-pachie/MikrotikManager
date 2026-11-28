@@ -78,6 +78,7 @@ public interface INetoraApiClient
     Task<ApiResponse<RouterTestResultDto>> TestRouterAsync(CancellationToken cancellationToken);
     Task<ApiResponse<ProvisioningResult>> RetryApprovalAsync(long requestId, CancellationToken cancellationToken);
     Task<ApiResponse<RouterStatusDto>> GetRouterStatusAsync(int customerId, CancellationToken cancellationToken);
+    Task<ApiResponse<PppoeTrafficSampleDto>> GetPppoeTrafficAsync(int customerId, CancellationToken cancellationToken);
     Task<ApiResponse<ImportScanDto>> ScanImportAsync(CancellationToken cancellationToken);
     Task<ApiResponse<ImportResultDto>> ImportPppoeAsync(ImportRequest request, CancellationToken cancellationToken);
     Task<ApiResponse<PlanListDto>> GetPlansAsync(CancellationToken cancellationToken, string? sortBy = null, bool descending = false);
@@ -297,6 +298,9 @@ public sealed class NetoraApiClient(HttpClient httpClient, ILogger<NetoraApiClie
 
     public Task<ApiResponse<RouterStatusDto>> GetRouterStatusAsync(int customerId, CancellationToken cancellationToken)
         => SendAsync<RouterStatusDto>(HttpMethod.Get, $"api/v1/customers/{customerId}/router-status", null, cancellationToken);
+
+    public Task<ApiResponse<PppoeTrafficSampleDto>> GetPppoeTrafficAsync(int customerId, CancellationToken cancellationToken)
+        => SendAsync<PppoeTrafficSampleDto>(HttpMethod.Get, $"api/v1/customers/{customerId}/pppoe-traffic", null, cancellationToken);
 
     public Task<ApiResponse<ImportScanDto>> ScanImportAsync(CancellationToken cancellationToken)
         => SendAsync<ImportScanDto>(HttpMethod.Get, "api/v1/pppoe/import/scan", null, cancellationToken);

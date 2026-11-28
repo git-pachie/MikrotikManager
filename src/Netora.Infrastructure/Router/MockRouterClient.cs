@@ -69,6 +69,9 @@ internal sealed class MockRouterClient(
             return ToSecret(existing);
         }, save: true, cancellationToken);
 
+    public Task<PppoeTrafficCounters?> ReadPppoeTrafficAsync(string name, CancellationToken cancellationToken)
+        => Task.FromResult<PppoeTrafficCounters?>(null);
+
     public Task<RouterActiveSession?> FindActiveSessionAsync(string name, CancellationToken cancellationToken)
         => WithStateAsync(s =>
         {

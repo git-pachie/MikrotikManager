@@ -74,6 +74,7 @@ public interface IRouterClient
 
     Task<RouterActiveSession?> FindActiveSessionAsync(string name, CancellationToken cancellationToken);
     Task<IReadOnlyList<RouterActiveSession>> ListActivePppoeSessionsAsync(CancellationToken cancellationToken);
+    Task<PppoeTrafficCounters?> ReadPppoeTrafficAsync(string name, CancellationToken cancellationToken);
     Task DisconnectPppoeSessionAsync(string id, CancellationToken cancellationToken);
 
     Task<IReadOnlyList<RouterPppoeLog>> ReadPppoeLogsAsync(string name, CancellationToken cancellationToken);
@@ -122,6 +123,10 @@ public sealed record RouterStatusDto(
 
 public sealed record PppoeRouterAddressesDto(string? Local, string? Remote, bool LocalFromProfile, bool RemoteFromProfile);
 
+public sealed record PppoeTrafficCounters(string ConnectionKey, decimal DownloadBytes, decimal UploadBytes);
+
+public sealed record PppoeTrafficSampleDto(string State, DateTimeOffset SampledAtUtc, PppoeTrafficCounters? Counters = null);
+
 /// <summary>A difference between SQL Server and the router. Shown, never fixed automatically (09.04).</summary>
 public sealed record RouterMismatchDto(string Field, string Expected, string Actual);
 
@@ -130,6 +135,7 @@ public interface IRouterStatusService
     /// <summary>Null when the customer does not exist or is hidden from the viewer.</summary>
     Task<RouterStatusDto?> CheckAsync(int customerId, bool viewerIsManager, CancellationToken cancellationToken);
     Task<PppoeDiagnosticsDto?> DiagnoseAsync(int customerId, bool viewerIsManager, bool includeLogs, CancellationToken cancellationToken);
+    Task<PppoeTrafficSampleDto?> SampleTrafficAsync(int customerId, bool viewerIsManager, CancellationToken cancellationToken);
 }
 
 public sealed record ImportCandidateDto(string Name, string? Profile, bool Disabled, string? Comment, string State, string? Reason, int? CustomerId);

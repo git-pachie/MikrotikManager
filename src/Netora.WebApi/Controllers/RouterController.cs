@@ -14,6 +14,19 @@ namespace Netora.WebApi.Controllers;
 [ApiController]
 public sealed class RouterController(IRouterStatusService status, IPppoeImportService import, IRouterClient router) : ControllerBase
 {
+    /// <summary>Reads current traffic counters for a visible customer's running PPPoE connection.</summary>
+    [HttpGet("api/v1/customers/{customerId:int}/pppoe-traffic")]
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+    [ProducesResponseType(typeof(ApiResponse<PppoeTrafficSampleDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<PppoeTrafficSampleDto>), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Traffic(int customerId, CancellationToken cancellationToken)
+    {
+        var result = await status.SampleTrafficAsync(customerId, User.IsInRole(Roles.Manager), cancellationToken);
+        return result is null
+            ? NotFound(ApiResponse<PppoeTrafficSampleDto>.Fail("not_found", "Customer not found.", HttpContext.TraceIdentifier))
+            : Ok(ApiResponse<PppoeTrafficSampleDto>.Ok(result, HttpContext.TraceIdentifier));
+    }
+
     [HttpGet("api/v1/customers/{customerId:int}/diagnostics")]
     [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
     public async Task<IActionResult> Diagnostics(int customerId, bool includeLogs = true, CancellationToken cancellationToken = default)

@@ -331,3 +331,31 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
 @media (prefers-reduced-motion: reduce) {
     .pppoe-session-icon.online::after { animation: none; }
 }
+
+.pppoe-traffic {
+  --traffic-download: #218023;
+  --traffic-upload: #065bda;
+  margin: 24px 0;
+  padding: clamp(14px, 2vw, 22px);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+}
+[data-bs-theme=dark] .pppoe-traffic {
+  --traffic-download: #8cde74;
+  --traffic-upload: #79afff;
+}
+.pppoe-traffic-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 16px; justify-content: space-between; }
+.pppoe-traffic-heading h3 { margin: 0; font-size: 16px; font-weight: 600; }
+.pppoe-traffic-heading p, #traffic-status { margin: 0; color: var(--muted); font-size: 12px; }
+.pppoe-traffic-rates { display: grid; grid-template-columns: repeat(2, minmax(0, 170px)); gap: 8px; margin: 12px 0; }
+.pppoe-traffic-rates > div { padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.pppoe-traffic-rates dt { display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 600; }
+.pppoe-traffic-rates dt .icon { width: 16px; height: 16px; }
+.pppoe-traffic-rates dt::after { content: ""; width: 14px; margin-inline-start: auto; border-top: 2px solid currentColor; }
+.pppoe-traffic-rates .traffic-download { color: var(--traffic-download); }
+.pppoe-traffic-rates .traffic-upload { color: var(--traffic-upload); }
+.pppoe-traffic-rates .traffic-upload dt::after { border-top-style: dashed; }
+.pppoe-traffic-rates dd { margin: 0; font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.pppoe-traffic canvas { display: block; width: 100%; height: clamp(150px, 28vw, 232px); }
+#traffic-status { margin-top: 8px; }

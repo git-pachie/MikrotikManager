@@ -15,6 +15,16 @@ namespace Netora.Tests;
 /// <summary>In-memory router for tests. Counts writes and can be told to be unreachable.</summary>
 public sealed class FakeRouter : IRouterClient
 {
+    public Dictionary<string, PppoeTrafficCounters> Traffic { get; } = new(StringComparer.Ordinal);
+    public List<string> TrafficReads { get; } = [];
+
+    public Task<PppoeTrafficCounters?> ReadPppoeTrafficAsync(string name, CancellationToken cancellationToken)
+    {
+        TrafficReads.Add(name);
+        Check();
+        return Task.FromResult(Traffic.GetValueOrDefault(name));
+    }
+
     public Task<IReadOnlyList<RouterPppoeLog>> ReadPppoeLogsAsync(string name, CancellationToken cancellationToken)
         => Task.FromResult<IReadOnlyList<RouterPppoeLog>>([]);
 
@@ -27,7 +37,7 @@ public sealed class FakeRouter : IRouterClient
     public HashSet<string> Online { get; } = [];
     private int next = 1;
 
-    public string Mode => "Mock";
+    public string Mode { get; set; } = "Mock";
 
     public Task<RouterIdentity> GetIdentityAsync(CancellationToken ct) => Down
         ? throw new RouterException(RouterErrorKind.Unreachable, "down")

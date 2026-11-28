@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -86,6 +87,50 @@ internal sealed partial class RouterOsRestClient(
 
     public Task<IReadOnlyList<RouterActiveSession>> ListActivePppoeSessionsAsync(CancellationToken cancellationToken)
         => ReadSessionsAsync("", cancellationToken);
+
+    public async Task<PppoeTrafficCounters?> ReadPppoeTrafficAsync(string name, CancellationToken cancellationToken)
+    {
+        var bindings = await SendAsync(HttpMethod.Get,
+            "interface/pppoe-server?running=true&.proplist=.id,name,user,running&user=" + Uri.EscapeDataString(name),
+            null, cancellationToken);
+        if (bindings.ValueKind != JsonValueKind.Array)
+            throw new RouterException(RouterErrorKind.Rejected, "The router returned an unexpected PPPoE interface list.");
+
+        decimal downloadBytes = 0;
+        decimal uploadBytes = 0;
+        var connections = new List<string>();
+        foreach (var binding in bindings.EnumerateArray())
+        {
+            if (binding.ValueKind != JsonValueKind.Object || Str(binding, "user") is null || Str(binding, "running") is null)
+                throw new RouterException(RouterErrorKind.Rejected, "The router returned an incomplete PPPoE interface.");
+            if (!string.Equals(Str(binding, "user"), name, StringComparison.Ordinal) || Str(binding, "running") != "true")
+                continue;
+
+            var id = Str(binding, ".id");
+            var interfaceName = Str(binding, "name");
+            if (id is null || !IdPattern().IsMatch(id) || string.IsNullOrEmpty(interfaceName))
+                throw new RouterException(RouterErrorKind.Rejected, "The router returned an invalid PPPoE interface.");
+
+            var row = await SendAsync(HttpMethod.Get,
+                $"interface/{id}?.proplist=.id,name,running,type,last-link-up-time,link-downs,tx-byte,rx-byte",
+                null, cancellationToken);
+            if (row.ValueKind != JsonValueKind.Object || Str(row, ".id") != id || Str(row, "name") != interfaceName
+                || Str(row, "running") != "true" || Str(row, "type") != "pppoe-in"
+                || !ulong.TryParse(Str(row, "tx-byte"), NumberStyles.None, CultureInfo.InvariantCulture, out var tx)
+                || !ulong.TryParse(Str(row, "rx-byte"), NumberStyles.None, CultureInfo.InvariantCulture, out var rx))
+                throw new RouterException(RouterErrorKind.Rejected, "The PPPoE traffic counters are unavailable.");
+
+            // Router transmit is subscriber download. A new link invalidates comparisons with the previous counters.
+            downloadBytes += tx;
+            uploadBytes += rx;
+            connections.Add($"{id}:{Str(row, "last-link-up-time")}:{Str(row, "link-downs")}");
+        }
+
+        if (connections.Count == 0) return null;
+        connections.Sort(StringComparer.Ordinal);
+        var connectionKey = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join('|', connections))));
+        return new(connectionKey, downloadBytes, uploadBytes);
+    }
 
     private async Task<IReadOnlyList<RouterActiveSession>> ReadSessionsAsync(string filter, CancellationToken cancellationToken)
     {
